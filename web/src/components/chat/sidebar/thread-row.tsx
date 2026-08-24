@@ -108,7 +108,9 @@ export function ThreadRow({
           <Button
             size="icon"
             variant="ghost"
-            className="h-6 w-6 opacity-0 transition-opacity group-hover:opacity-100"
+            aria-label={t('More actions')}
+            title={t('More actions')}
+            className="h-7 w-7 shrink-0 opacity-100 transition-opacity [@media(min-width:768px)_and_(hover:hover)_and_(pointer:fine)]:opacity-0 [@media(min-width:768px)_and_(hover:hover)_and_(pointer:fine)]:group-hover:opacity-100 [@media(min-width:768px)_and_(hover:hover)_and_(pointer:fine)]:focus-visible:opacity-100"
           >
             <MoreHorizontal className="h-3.5 w-3.5" />
           </Button>
