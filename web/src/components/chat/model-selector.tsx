@@ -12,7 +12,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import {
-  codexStatusGetStatusOptions,
+  codexConfigReadConfigOptions,
   modelsListModelsOptions,
 } from '@/generated/api/@tanstack/react-query.gen';
 import type { ModelDto } from '@/generated/api';
@@ -44,9 +44,9 @@ export function ModelSelector() {
   const setModelOverride = useModelStore((s) => s.setModelOverride);
   const setEffortOverride = useModelStore((s) => s.setEffortOverride);
 
-  // Config model from status (lightweight, cached)
-  const { data: statusData } = useQuery({
-    ...codexStatusGetStatusOptions(),
+  // Effective Codex config is the source of truth for model defaults.
+  const { data: configData } = useQuery({
+    ...codexConfigReadConfigOptions(),
     refetchOnWindowFocus: true,
   });
   // Full model list from dedicated endpoint (longer staleTime)
@@ -55,11 +55,16 @@ export function ModelSelector() {
     staleTime: 60_000,
   });
 
-  const configModel = (statusData?.config.data as { model?: string } | undefined)?.model;
+  const config = configData?.config as Record<string, unknown> | undefined;
+  const configModel = typeof config?.model === 'string' ? config.model : null;
+  const configEffort = isReasoningEffort(config?.model_reasoning_effort)
+    ? config.model_reasoning_effort
+    : null;
   const models = modelsData?.data?.filter((m) => !m.hidden) ?? [];
   const activeModelId = modelOverride ?? configModel ?? null;
   const activeModel = models.find((m) => m.model === activeModelId);
-  const activeEffort = effortOverride ?? activeModel?.defaultReasoningEffort ?? null;
+  const defaultEffort = configEffort ?? activeModel?.defaultReasoningEffort ?? null;
+  const activeEffort = effortOverride ?? defaultEffort;
 
   const displayModel = activeModel
     ? modelLabel(activeModel)
@@ -77,7 +82,7 @@ export function ModelSelector() {
   };
 
   const handleEffortSelect = (effort: ReasoningEffort) => {
-    if (effort === activeModel?.defaultReasoningEffort) {
+    if (effort === defaultEffort) {
       setEffortOverride(null);
     } else {
       setEffortOverride(effort);
@@ -166,7 +171,7 @@ export function ModelSelector() {
               )}
             >
               <span>{opt.reasoningEffort}</span>
-              {activeModel && opt.reasoningEffort === activeModel.defaultReasoningEffort && (
+              {opt.reasoningEffort === defaultEffort && (
                 <span className="text-[10px] text-muted-foreground">
                   {t('default')}
                 </span>
@@ -177,4 +182,15 @@ export function ModelSelector() {
       </PopoverContent>
     </Popover>
   );
+}
+
+function isReasoningEffort(value: unknown): value is ReasoningEffort {
+  return typeof value === 'string' && [
+    'none',
+    'minimal',
+    'low',
+    'medium',
+    'high',
+    'xhigh',
+  ].includes(value);
 }

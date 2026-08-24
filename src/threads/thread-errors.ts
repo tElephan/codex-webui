@@ -17,6 +17,8 @@ import {
 
 /** JSON-RPC "Invalid Request"; app-server's catch-all for rejected calls. */
 const INVALID_REQUEST = -32600;
+/** JSON-RPC "Method not found"; used for empty paginated turn history. */
+const METHOD_NOT_FOUND = -32601;
 
 /** Flattens message and structured data into one string for matching. */
 function errorText(err: unknown): string {
@@ -41,12 +43,25 @@ function isInvalidRequest(err: unknown): boolean {
  * recoverable state into a hard failure if app-server changed the code.
  */
 export function isNotMaterializedError(err: unknown): boolean {
-  return /\bnot materialized\b/i.test(errorText(err));
+  if (/\bnot materialized\b/i.test(errorText(err))) return true;
+  return (
+    isCodexRpcError(err) &&
+    err.code === METHOD_NOT_FOUND &&
+    /\blist_turns is not supported yet\b/i.test(errorText(err))
+  );
 }
 
 /** Returns true when the app-server process is not connected. */
 export function isThreadServerUnavailableError(err: unknown): boolean {
   return isCodexUnavailableError(err);
+}
+
+/** Returns true when another app-server process currently owns the thread writer. */
+export function isActiveWriterError(err: unknown): boolean {
+  return (
+    isInvalidRequest(err) &&
+    /\balready has an active writer\b/i.test(errorText(err))
+  );
 }
 
 /**

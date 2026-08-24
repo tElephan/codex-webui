@@ -2,8 +2,14 @@
  * Chat message input orchestrator.
  * Delegates attachment management to useChatAttachments and @ mention to useChatMention.
  */
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { Send, Square, TerminalSquare } from 'lucide-react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+} from 'react';
+import { GitFork, Loader2, Send, Square, TerminalSquare } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
@@ -19,6 +25,7 @@ import { cn } from '@/lib/utils';
 import { getApiErrorMessage } from '@/lib/api-error';
 import { useTimelineStore } from '@/stores/timeline-store';
 import { useModelStore } from '@/stores/model-store';
+import { useChatDraftStore } from '@/stores/chat-draft-store';
 import { useChatAttachments } from '@/hooks/use-chat-attachments';
 import { useChatMention } from '@/hooks/use-chat-mention';
 import { SecurityPolicyBadge } from './security-policy-badge';
@@ -38,19 +45,30 @@ export interface ChatInputHandle {
 interface Props {
   panelOpen: boolean;
   onTogglePanel: () => void;
+  onForkReadOnly: () => void;
+  forkPending: boolean;
 }
 
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
-  { panelOpen, onTogglePanel },
+  { panelOpen, onTogglePanel, onForkReadOnly, forkPending },
   ref,
 ) {
-  const [value, setValue] = useState('');
+  const threadId = useTimelineStore((s) => s.threadId);
+  const value = useChatDraftStore((s) => threadId ? s.drafts[threadId] ?? '' : '');
+  const setDraft = useChatDraftStore((s) => s.setDraft);
+  const setValue = useCallback<React.Dispatch<React.SetStateAction<string>>>(
+    (update) => {
+      if (threadId) setDraft(threadId, update);
+    },
+    [setDraft, threadId],
+  );
   const valueRef = useRef(value);
-  useEffect(() => { valueRef.current = value; }, [value]);
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const { t } = useTranslation();
-  const threadId = useTimelineStore((s) => s.threadId);
   const threadCwd = useTimelineStore((s) => s.threadCwd);
   const threadMode = useTimelineStore((s) => s.threadMode);
   const loading = useTimelineStore((s) => s.loading);
@@ -67,7 +85,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
   const addUserMessage = useTimelineStore((s) => s.addUserMessage);
   const addSystemError = useTimelineStore((s) => s.addSystemError);
   const readOnly = threadMode === 'readOnly';
-  const hasActiveTurn = Boolean(threadId && activeTurnId && !readOnly);
+  const writerConflict = threadMode === 'writerConflict';
+  const inputDisabled = readOnly || writerConflict;
+  const hasActiveTurn = Boolean(threadId && activeTurnId && !inputDisabled);
   const canSteer = hasActiveTurn && !hasPendingApproval;
 
   // ── Attachment hook ──────────────────────────────────────
@@ -113,10 +133,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
   });
 
   // ── Imperative handle ────────────────────────────────────
-  useImperativeHandle(ref, () => ({
-    setInput: setValue,
-    addFileAttachment: addFileMention,
-  }), [addFileMention]);
+  useImperativeHandle(
+    ref,
+    () => ({
+      setInput: setValue,
+      addFileAttachment: addFileMention,
+    }),
+    [addFileMention, setValue],
+  );
 
   // ── Turn mutations ───────────────────────────────────────
   const queryClient = useQueryClient();
@@ -148,12 +172,18 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
 
   const handleSend = useCallback(() => {
     const input = buildInput();
-    if (input.length === 0 || !threadId || loading || readOnly) return;
+    if (input.length === 0 || !threadId || loading || inputDisabled) return;
     // Collect image paths for timeline display
     const imageAttachments = attachmentsRef.current
-      .filter((a): a is import('@/types/attachments').ChatImageAttachment => a.type === 'localImage')
+      .filter(
+        (a): a is import('@/types/attachments').ChatImageAttachment =>
+          a.type === 'localImage',
+      )
       .map((a) => a.path);
-    addUserMessage(valueRef.current.trim(), imageAttachments.length > 0 ? imageAttachments : undefined);
+    addUserMessage(
+      valueRef.current.trim(),
+      imageAttachments.length > 0 ? imageAttachments : undefined,
+    );
     clearAfterSend();
     const { modelOverride, effortOverride } = useModelStore.getState();
     startTurn.mutate({
@@ -164,11 +194,27 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
         ...(effortOverride && { effort: effortOverride }),
       },
     });
-  }, [buildInput, threadId, loading, readOnly, attachmentsRef, addUserMessage, clearAfterSend, startTurn]);
+  }, [
+    buildInput,
+    threadId,
+    loading,
+    inputDisabled,
+    attachmentsRef,
+    addUserMessage,
+    clearAfterSend,
+    startTurn,
+  ]);
 
   const handleSteer = useCallback(() => {
     const input = buildInput();
-    if (input.length === 0 || !canSteer || !threadId || !activeTurnId || steer.isPending) return;
+    if (
+      input.length === 0 ||
+      !canSteer ||
+      !threadId ||
+      !activeTurnId ||
+      steer.isPending
+    )
+      return;
     clearAfterSend();
     steer.mutate({
       path: { threadId, turnId: activeTurnId },
@@ -182,33 +228,64 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
   }, [threadId, activeTurnId, interruptTurn]);
 
   const handleSubmit = useCallback(() => {
-    if (hasActiveTurn) { handleSteer(); return; }
+    if (hasActiveTurn) {
+      handleSteer();
+      return;
+    }
     handleSend();
   }, [hasActiveTurn, handleSteer, handleSend]);
 
   // ── Input handlers ───────────────────────────────────────
-  const handleChange = useCallback((newValue: string) => {
-    setValue(newValue);
-    detectMention(newValue);
-  }, [detectMention]);
+  const handleChange = useCallback(
+    (newValue: string) => {
+      setValue(newValue);
+      detectMention(newValue);
+    },
+    [detectMention, setValue],
+  );
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (handleMentionKeyDown(e)) return;
-    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-      e.preventDefault();
-      handleSubmit();
-    }
-  }, [handleMentionKeyDown, handleSubmit]);
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (handleMentionKeyDown(e)) return;
+      if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+        e.preventDefault();
+        handleSubmit();
+      }
+    },
+    [handleMentionKeyDown, handleSubmit],
+  );
 
   const hasContent = value.trim().length > 0 || attachments.length > 0;
 
   // ── Render ───────────────────────────────────────────────
   return (
     <footer className="glass-4 sticky bottom-0 z-10 px-3 py-2.5 sm:px-4 sm:py-3 lg:px-6">
-      {readOnly && (
-        <p className="mb-2 rounded-lg bg-muted px-3 py-2 text-center text-xs text-muted-foreground">
-          {t('Archived threads are read-only. Unarchive or fork to continue.')}
-        </p>
+      {inputDisabled && (
+        <div className="mb-2 flex items-center justify-between gap-3 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+          <span className="min-w-0">
+            {writerConflict
+              ? t(
+                  'This conversation is active in another Codex client. Continue in a new branch to avoid conflicting writers.',
+                )
+              : t(
+                  'Archived threads are read-only. Unarchive or fork to continue.',
+                )}
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 shrink-0 gap-1.5 px-2.5 text-xs"
+            disabled={forkPending}
+            onClick={onForkReadOnly}
+          >
+            {forkPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <GitFork className="h-3.5 w-3.5" />
+            )}
+            {t('Continue in a branch')}
+          </Button>
+        </div>
       )}
       <div className="relative">
         <AttachmentChips
@@ -229,10 +306,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
         />
 
         {/* Container provides border/rounding; textarea + buttons are stacked inside */}
-        <div className={cn(
-          'border border-input bg-background/60 backdrop-blur-sm transition-all duration-200 focus-within:ring-2 focus-within:ring-primary/30',
-          chipAttachments.length > 0 ? 'rounded-b-xl border-t-0' : 'rounded-xl',
-        )}>
+        <div
+          className={cn(
+            'border border-input bg-background/60 backdrop-blur-sm transition-all duration-200 focus-within:ring-2 focus-within:ring-primary/30',
+            chipAttachments.length > 0
+              ? 'rounded-b-xl border-t-0'
+              : 'rounded-xl',
+          )}
+        >
           <Textarea
             ref={textareaRef}
             value={value}
@@ -240,15 +321,17 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             placeholder={
-              readOnly
-                ? t('Archived thread is read-only')
+              inputDisabled
+                ? writerConflict
+                  ? t('Thread is active in another Codex client')
+                  : t('Archived thread is read-only')
                 : hasActiveTurn
                   ? t('Add input to the active turn...')
                   : threadId
                     ? t('Type a message... (@ to mention files, paste images)')
                     : t('Create a thread first')
             }
-            disabled={!threadId || readOnly}
+            disabled={!threadId || inputDisabled}
             rows={1}
             className="max-h-40 min-h-20 resize-none overflow-y-auto border-none bg-transparent pr-4 pt-2.5 shadow-none focus-visible:ring-0"
           />
@@ -259,7 +342,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
               <McpStatusBadge />
               <SkillSelector
                 cwd={threadCwd}
-                disabled={!threadId || readOnly}
+                disabled={!threadId || inputDisabled}
                 onSelect={handleSkillSelect}
               />
               <Button
@@ -267,7 +350,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
                 variant={panelOpen ? 'secondary' : 'ghost'}
                 className="h-7 gap-1.5 rounded-lg px-2.5 text-xs"
                 onClick={onTogglePanel}
-                disabled={!threadId || readOnly}
+                disabled={!threadId || inputDisabled}
                 title={t('Terminal')}
               >
                 <TerminalSquare className="h-3.5 w-3.5" />
@@ -303,7 +386,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
                 <Button
                   size="icon"
                   className="h-7 w-7 rounded-lg transition-transform duration-200 hover:scale-105 active:scale-95"
-                  disabled={!threadId || !hasContent || loading || readOnly}
+                  disabled={
+                    !threadId || !hasContent || loading || inputDisabled
+                  }
                   onClick={handleSend}
                 >
                   <Send className="h-3.5 w-3.5" />

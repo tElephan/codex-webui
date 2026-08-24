@@ -231,14 +231,14 @@ export class TerminalService implements OnModuleDestroy {
     }
   }
 
-  /** Writes input from an attached socket to a terminal. */
+  /** Writes input to a terminal, restoring a dropped socket attachment if needed. */
   write(
     socketId: string,
     contextKey: string,
     terminalId: string,
     data: string,
   ): void {
-    const session = this.getAttachedSession(socketId, contextKey, terminalId);
+    const session = this.getOrAttachSession(socketId, contextKey, terminalId);
     if (session.status !== 'running') {
       throw BusinessException.badRequest(
         ErrorCode.terminal.exited,
@@ -254,7 +254,7 @@ export class TerminalService implements OnModuleDestroy {
     session.process.write(data);
   }
 
-  /** Resizes a terminal from any attached socket. Last resize wins. */
+  /** Resizes a terminal from any authenticated socket. Last resize wins. */
   resize(
     socketId: string,
     contextKey: string,
@@ -262,7 +262,7 @@ export class TerminalService implements OnModuleDestroy {
     cols: number,
     rows: number,
   ): TerminalMetadata {
-    const session = this.getAttachedSession(socketId, contextKey, terminalId);
+    const session = this.getOrAttachSession(socketId, contextKey, terminalId);
     const nextCols = this.clampDimension(
       cols,
       MIN_COLS,
@@ -297,7 +297,7 @@ export class TerminalService implements OnModuleDestroy {
     terminalId: string,
     title: string,
   ): TerminalMetadata {
-    const session = this.getAttachedSession(socketId, contextKey, terminalId);
+    const session = this.getOrAttachSession(socketId, contextKey, terminalId);
     session.title = this.normalizeTitle(title, session.shell);
     this.emitMetadata(session);
     return this.toMetadata(session);
@@ -309,7 +309,7 @@ export class TerminalService implements OnModuleDestroy {
     contextKey: string,
     terminalId: string,
   ): Promise<{ filename: string; content: string }> {
-    const session = this.getAttachedSession(socketId, contextKey, terminalId);
+    const session = this.getOrAttachSession(socketId, contextKey, terminalId);
     await this.flushHeadless(session);
     const content = this.readActiveBuffer(session.headless);
     const safeTitle = session.title
@@ -323,8 +323,10 @@ export class TerminalService implements OnModuleDestroy {
   }
 
   /** Explicitly closes a terminal tab and kills the PTY for every attached socket. */
-  close(socketId: string, contextKey: string, terminalId: string): boolean {
-    const session = this.getAttachedSession(socketId, contextKey, terminalId);
+  close(_socketId: string, contextKey: string, terminalId: string): boolean {
+    // Listing a context is enough to expose its close control. Do not race the
+    // close action against the pane's asynchronous reconnect/attach handshake.
+    const session = this.getContextSession(contextKey, terminalId);
     const socketIds = Array.from(session.attachedSocketIds);
     const context = session.contextKey;
     this.cleanupSession(session, 'explicit close');
@@ -452,6 +454,7 @@ export class TerminalService implements OnModuleDestroy {
         'Terminal is closed',
       );
     }
+    if (session.attachedSocketIds.has(socketId)) return;
     if (session.graceTimer) {
       clearTimeout(session.graceTimer);
       session.graceTimer = null;
@@ -508,18 +511,13 @@ export class TerminalService implements OnModuleDestroy {
     return session;
   }
 
-  private getAttachedSession(
+  private getOrAttachSession(
     socketId: string,
     contextKey: string,
     terminalId: string,
   ): TerminalSession {
     const session = this.getContextSession(contextKey, terminalId);
-    if (!session.attachedSocketIds.has(socketId)) {
-      throw BusinessException.forbidden(
-        ErrorCode.terminal.socketNotAttached,
-        'Socket is not attached to this terminal',
-      );
-    }
+    this.attachSocket(session, socketId);
     return session;
   }
 

@@ -396,7 +396,7 @@ export class CodexStatusService {
       blocking = true;
     }
 
-    if (args.provider.id && args.provider.envKey === null) {
+    if (!runtimeOverride && args.provider.id && args.provider.envKey === null) {
       reasons.add('unknownProviderEnvKey');
     }
 

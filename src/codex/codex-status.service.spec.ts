@@ -259,6 +259,30 @@ describe('CodexStatusService', () => {
     expect(status.runtime.reasons).not.toContain('unknownProviderEnvKey');
   });
 
+  it('should stay ready for a working custom provider without an env key', async () => {
+    mockCodex.request.mockImplementation((method: string) => {
+      switch (method) {
+        case 'account/read':
+          return Promise.resolve(
+            accountResponse({ account: null, requiresOpenaiAuth: true }),
+          );
+        case 'config/read':
+          return Promise.resolve(
+            configResponse({ model_provider: 'openai-custom' }),
+          );
+        case 'model/list':
+          return Promise.resolve(modelListResponse());
+        default:
+          return Promise.reject(new Error(`Unexpected method: ${method}`));
+      }
+    });
+
+    const status = await service.getStatus();
+
+    expect(status.runtime.status).toBe('ready');
+    expect(status.runtime.reasons).toEqual([]);
+  });
+
   it('should return degraded when account/read fails but config and models work', async () => {
     mockCodex.request.mockImplementation((method: string) => {
       switch (method) {

@@ -1,4 +1,8 @@
-import { guessMimeType, parseRangeHeader } from './file-response';
+import {
+  buildContentDisposition,
+  guessMimeType,
+  parseRangeHeader,
+} from './file-response';
 
 describe('preview file response helpers', () => {
   it('parses bounded, open-ended, and suffix byte ranges', () => {
@@ -28,5 +32,22 @@ describe('preview file response helpers', () => {
     expect(guessMimeType('slides.pptx')).toBe(
       'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     );
+  });
+
+  it('keeps Content-Disposition ASCII-safe while preserving UTF-8 filenames', () => {
+    const header = buildContentDisposition('截图 2026-08-21 (final).png', true);
+
+    expect(header).toBe(
+      'inline; filename="__ 2026-08-21 (final).png"; ' +
+        "filename*=UTF-8''%E6%88%AA%E5%9B%BE%202026-08-21%20%28final%29.png",
+    );
+    expect(/[^\x20-\x7e]/.test(header)).toBe(false);
+  });
+
+  it('sanitizes characters that can break or inject disposition headers', () => {
+    const header = buildContentDisposition('bad\r\n"name\\file.txt', false);
+
+    expect(header).toContain('attachment; filename="bad___name_file.txt"');
+    expect(header).toContain("filename*=UTF-8''bad%0D%0A%22name%5Cfile.txt");
   });
 });

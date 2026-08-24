@@ -12,21 +12,32 @@ interface Props {
   contextKey: string;
   cwd?: string;
   className?: string;
+  visible?: boolean;
 }
 
-export function TerminalWorkspace({ contextKey, cwd, className }: Props) {
+export function TerminalWorkspace({
+  contextKey,
+  cwd,
+  className,
+  visible = true,
+}: Props) {
   const { t } = useTranslation();
   useTerminalSocketEvents();
   const context = useTerminalStore((s) => s.contexts[contextKey]);
+  const hydrated = useTerminalStore((s) => s.hydrated);
   const ensureContext = useTerminalStore((s) => s.ensureContext);
   const selectTerminal = useTerminalStore((s) => s.selectTerminal);
 
-  const terminalIds = useMemo(() => context?.terminalIds ?? [], [context?.terminalIds]);
+  const terminalIds = useMemo(
+    () => context?.terminalIds ?? [],
+    [context?.terminalIds],
+  );
   const activeTerminalId = context?.activeTerminalId ?? terminalIds[0] ?? null;
 
   useEffect(() => {
+    if (!hydrated) return;
     void ensureContext(contextKey, cwd, true);
-  }, [contextKey, cwd, ensureContext]);
+  }, [contextKey, cwd, ensureContext, hydrated]);
 
   useEffect(() => {
     if (!activeTerminalId && terminalIds[0]) {
@@ -35,19 +46,23 @@ export function TerminalWorkspace({ contextKey, cwd, className }: Props) {
   }, [activeTerminalId, contextKey, selectTerminal, terminalIds]);
 
   return (
-    <div className={cn('flex h-full min-h-0 flex-col bg-background', className)}>
+    <div
+      className={cn('flex h-full min-h-0 flex-col bg-background', className)}
+    >
       <div className="flex shrink-0 items-center border-b border-border bg-muted/20">
         <TerminalTabs
           contextKey={contextKey}
           cwd={cwd}
           activeTerminalId={activeTerminalId}
-          onSelectTerminal={(terminalId) => selectTerminal(contextKey, terminalId)}
+          onSelectTerminal={(terminalId) =>
+            selectTerminal(contextKey, terminalId)
+          }
           className="min-w-0 flex-1"
         />
       </div>
 
       <div className="relative min-h-0 flex-1">
-        {terminalIds.length === 0 && (
+        {hydrated && terminalIds.length === 0 && (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
             {t('No terminals')}
           </div>
@@ -57,13 +72,16 @@ export function TerminalWorkspace({ contextKey, cwd, className }: Props) {
             key={terminalId}
             contextKey={contextKey}
             terminalId={terminalId}
-            active={terminalId === activeTerminalId}
+            active={visible && terminalId === activeTerminalId}
             className="absolute inset-0"
           />
         ))}
       </div>
 
-      <TerminalStatusBar contextKey={contextKey} activeTerminalId={activeTerminalId} />
+      <TerminalStatusBar
+        contextKey={contextKey}
+        activeTerminalId={activeTerminalId}
+      />
     </div>
   );
 }

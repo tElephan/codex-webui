@@ -37,6 +37,7 @@ import {
   OkResponseDto,
 } from '../common/dto/api-responses.dto';
 import {
+  buildContentDisposition,
   guessMimeType,
   sendRangedStream,
   singleHeaderValue,
@@ -291,7 +292,7 @@ export class FilesController {
     reply.header('Content-Length', download.size);
     reply.header(
       'Content-Disposition',
-      this.buildContentDisposition(download.filename),
+      buildContentDisposition(download.filename, false),
     );
     return reply.send(fsSync.createReadStream(download.path));
   }
@@ -405,17 +406,5 @@ export class FilesController {
   /** Parses optional boolean query flags used by destructive file operations. */
   private parseBooleanQuery(value: string | undefined): boolean {
     return value === 'true' || value === '1';
-  }
-
-  /** Builds a safe Content-Disposition attachment header value. */
-  private buildContentDisposition(filename: string): string {
-    const fallback = filename.replace(/[\r\n"\\]/g, '_');
-    return `attachment; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
-  }
-
-  /** Builds a Content-Disposition inline header for browser rendering. */
-  private buildInlineDisposition(filename: string): string {
-    const fallback = filename.replace(/[\r\n"\\]/g, '_');
-    return `inline; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
   }
 }

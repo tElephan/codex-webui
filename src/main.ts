@@ -97,6 +97,9 @@ async function bootstrap() {
     SwaggerModule.setup('api/docs', app, document);
   }
 
-  await app.listen(process.env.PORT ?? 8172, '0.0.0.0');
+  await app.listen(
+    process.env.PORT ?? 8172,
+    process.env.HOST?.trim() || '0.0.0.0',
+  );
 }
 void bootstrap();

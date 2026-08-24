@@ -104,7 +104,7 @@ export class FilesService implements OnModuleDestroy {
   private readonly logger = new Logger(FilesService.name);
   /** Roots dynamically added via addWorkspaceRoot (e.g. thread cwd). */
   private readonly dynamicRoots = new Set<string>();
-  /** Union of configured roots (from setting/env) + dynamicRoots + home. */
+  /** Union of configured roots (from setting/env) and allowed dynamic roots. */
   private workspaceRoots = new Set<string>();
   /** Directory/file names excluded from tree listings, configurable via settings. */
   private excludedDirs = DEFAULT_EXCLUDED_DIRS;
@@ -149,8 +149,10 @@ export class FilesService implements OnModuleDestroy {
         this.logger.warn(`Skipping invalid workspace root: ${root}`);
       }
     }
-    // Home directory is always included
-    next.add(fsSync.realpathSync(os.homedir()));
+    // Preserve the upstream home fallback only when no roots are configured.
+    if (next.size === 0) {
+      next.add(fsSync.realpathSync(os.homedir()));
+    }
 
     // Prune dynamic roots that no longer fall within any configured root
     for (const dynamicRoot of this.dynamicRoots) {
@@ -662,7 +664,8 @@ export class FilesService implements OnModuleDestroy {
 
   /** Returns the user's home directory. */
   getHomeDir(): string {
-    return os.homedir();
+    const [firstRoot] = this.workspaceRoots;
+    return firstRoot ?? os.homedir();
   }
 
   /**

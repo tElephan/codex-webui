@@ -258,7 +258,7 @@ function TimelineEntryRow({
           <UserMessageBubble content={entry.content} threadCwd={threadCwd} images={entry.images} />
         </div>
         {/* Reserved even when empty so revealing the controls cannot shift layout. */}
-        <div className="mt-1 flex h-6 items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover/user:opacity-100">
+        <div className="mt-1 flex h-6 items-center gap-1 opacity-100 transition-opacity [@media(min-width:768px)_and_(hover:hover)_and_(pointer:fine)]:opacity-0 [@media(min-width:768px)_and_(hover:hover)_and_(pointer:fine)]:focus-within:opacity-100 [@media(min-width:768px)_and_(hover:hover)_and_(pointer:fine)]:group-hover/user:opacity-100">
           {versions && <MessageVersionSwitcher versions={versions} />}
           {/* Rendered whenever the message has a turn, disabled rather than
               removed — dropping it mid-switch would move the version switcher. */}

@@ -4,11 +4,14 @@
  * (lazy-loaded on first completed code block, plain <code> fallback while loading).
  */
 import { memo, useEffect, useState, useCallback, type ComponentProps } from 'react';
-import Markdown from 'react-markdown';
+import Markdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Copy, Check } from 'lucide-react';
+import { Copy, Check, FileText } from 'lucide-react';
 import { showSnackbar } from '@/stores/snackbar-store';
+import { useTimelineStore } from '@/stores/timeline-store';
 import { useTranslation } from 'react-i18next';
+import { copyText } from '@/lib/clipboard';
+import { openFileInPanel, parseLocalFileLink } from '@/lib/local-file-link';
 import { cn } from '@/lib/utils';
 
 type HighlighterType = Awaited<ReturnType<typeof import('shiki')['createHighlighter']>>;
@@ -40,6 +43,16 @@ interface Props {
   content: string;
   /** When false (streaming), skip Shiki highlighting for performance. */
   completed: boolean;
+  /** Base directory used for local links in rendered files. */
+  localLinkBase?: string;
+  /** Treat plain relative hrefs as files; intended for Markdown file previews. */
+  allowBareRelativeLinks?: boolean;
+}
+
+/** Allows local file URLs through for the custom file-link renderer only. */
+function agentUrlTransform(url: string): string {
+  if (url.startsWith('file://') && parseLocalFileLink(url, null)) return url;
+  return defaultUrlTransform(url);
 }
 
 /** Code block with optional Shiki highlighting and copy button. */
@@ -82,7 +95,7 @@ function CodeBlock({
 
   const handleCopy = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(children);
+      await copyText(children);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -97,7 +110,9 @@ function CodeBlock({
         <button
           type="button"
           onClick={() => void handleCopy()}
-          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+          aria-label={copied ? t('Copied!') : t('Copy')}
+          title={copied ? t('Copied!') : t('Copy')}
+          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground opacity-100 transition-opacity hover:text-foreground focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
         >
           {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
           {copied ? t('Copied!') : t('Copy')}
@@ -118,7 +133,11 @@ function CodeBlock({
 }
 
 /** Maps markdown elements to Tailwind-styled components. */
-const components = (completed: boolean): ComponentProps<typeof Markdown>['components'] => ({
+const components = (
+  completed: boolean,
+  threadCwd: string | null,
+  allowBareRelativeLinks: boolean,
+): ComponentProps<typeof Markdown>['components'] => ({
   h1: ({ children }) => <h1 className="mb-3 mt-5 text-xl font-bold first:mt-0">{children}</h1>,
   h2: ({ children }) => <h2 className="mb-2 mt-4 text-lg font-semibold first:mt-0">{children}</h2>,
   h3: ({ children }) => <h3 className="mb-2 mt-3 text-base font-semibold first:mt-0">{children}</h3>,
@@ -131,16 +150,33 @@ const components = (completed: boolean): ComponentProps<typeof Markdown>['compon
       {children}
     </blockquote>
   ),
-  a: ({ href, children }) => (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="text-blue-400 underline decoration-blue-400/30 hover:decoration-blue-400"
-    >
-      {children}
-    </a>
-  ),
+  a: ({ href, children }) => {
+    const localFile = parseLocalFileLink(href, threadCwd, allowBareRelativeLinks);
+    if (localFile) {
+      return (
+        <button
+          type="button"
+          onClick={() => openFileInPanel(localFile.path)}
+          className="inline-flex cursor-pointer items-baseline gap-1 text-left text-blue-400 underline decoration-blue-400/30 hover:decoration-blue-400"
+          title={localFile.path}
+        >
+          <FileText className="relative top-0.5 inline h-3 w-3 shrink-0" />
+          <span>{children}</span>
+        </button>
+      );
+    }
+
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-blue-400 underline decoration-blue-400/30 hover:decoration-blue-400"
+      >
+        {children}
+      </a>
+    );
+  },
   table: ({ children }) => (
     <div className="my-2 overflow-auto">
       <table className="min-w-full border-collapse text-sm">{children}</table>
@@ -174,10 +210,22 @@ const components = (completed: boolean): ComponentProps<typeof Markdown>['compon
   pre: ({ children }) => <>{children}</>,
 });
 
-export const MarkdownRenderer = memo(function MarkdownRenderer({ content, completed }: Props) {
+export const MarkdownRenderer = memo(function MarkdownRenderer({
+  content,
+  completed,
+  localLinkBase,
+  allowBareRelativeLinks = false,
+}: Props) {
+  const threadCwd = useTimelineStore((s) => s.threadCwd);
+  const linkBase = localLinkBase ?? threadCwd;
+
   return (
     <div className={cn('text-sm leading-relaxed', 'wrap-break-word')}>
-      <Markdown remarkPlugins={[remarkGfm]} components={components(completed)}>
+      <Markdown
+        remarkPlugins={[remarkGfm]}
+        components={components(completed, linkBase, allowBareRelativeLinks)}
+        urlTransform={agentUrlTransform}
+      >
         {content}
       </Markdown>
     </div>

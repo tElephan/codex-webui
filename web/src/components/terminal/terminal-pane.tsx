@@ -17,11 +17,17 @@ interface Props {
   className?: string;
 }
 
-export function TerminalPane({ contextKey, terminalId, active, className }: Props) {
+export function TerminalPane({
+  contextKey,
+  terminalId,
+  active,
+  className,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const attachedRef = useRef(false);
+  const attachmentGenerationRef = useRef(0);
 
   const config = useTerminalStore((s) => s.config);
   const reconnectTerminal = useTerminalStore((s) => s.reconnectTerminal);
@@ -31,18 +37,31 @@ export function TerminalPane({ contextKey, terminalId, active, className }: Prop
   const attach = useCallback(async () => {
     const term = termRef.current;
     if (!term) return;
+    const generation = ++attachmentGenerationRef.current;
+    attachedRef.current = false;
     const response = await reconnectTerminal(contextKey, terminalId);
+    if (
+      generation !== attachmentGenerationRef.current ||
+      termRef.current !== term
+    ) {
+      return;
+    }
     if (!response) {
       attachedRef.current = false;
       term.reset();
-      term.write(`\r\n[${i18n.t('Terminal no longer exists. Create a new terminal.')}]\r\n`);
+      term.write(
+        `\r\n[${i18n.t('Terminal no longer exists. Create a new terminal.')}]\r\n`,
+      );
       return;
     }
     term.reset();
     if (response.state) term.write(response.state);
     if (response.terminal.status === 'exited') {
-      const code = response.terminal.exitCode ?? response.terminal.signal ?? '?';
-      term.write(`\r\n[${i18n.t('Process exited with code {{code}}', { code })}]\r\n`);
+      const code =
+        response.terminal.exitCode ?? response.terminal.signal ?? '?';
+      term.write(
+        `\r\n[${i18n.t('Process exited with code {{code}}', { code })}]\r\n`,
+      );
       attachedRef.current = false;
     } else {
       attachedRef.current = true;
@@ -78,6 +97,10 @@ export function TerminalPane({ contextKey, terminalId, active, className }: Prop
     const handleConnect = () => {
       void attach();
     };
+    const handleDisconnect = () => {
+      attachmentGenerationRef.current += 1;
+      attachedRef.current = false;
+    };
     const handleOutput = (event: { terminalId: string; data: string }) => {
       if (event.terminalId === terminalId) term.write(event.data);
     };
@@ -101,6 +124,7 @@ export function TerminalPane({ contextKey, terminalId, active, className }: Prop
     };
 
     socket.on('connect', handleConnect);
+    socket.on('disconnect', handleDisconnect);
     socket.on('terminal.output', handleOutput);
     socket.on('terminal.exit', handleExit);
     void attach();
@@ -112,11 +136,13 @@ export function TerminalPane({ contextKey, terminalId, active, className }: Prop
 
     return () => {
       socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
       socket.off('terminal.output', handleOutput);
       socket.off('terminal.exit', handleExit);
       inputDisposable.dispose();
-      detachTerminal(terminalId);
+      attachmentGenerationRef.current += 1;
       attachedRef.current = false;
+      detachTerminal(terminalId);
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
@@ -126,21 +152,31 @@ export function TerminalPane({ contextKey, terminalId, active, className }: Prop
   useEffect(() => {
     const element = containerRef.current;
     if (!element) return;
-    const observer = new ResizeObserver(() => {
-      if (!active) return;
+
+    const fitAndResize = () => {
+      if (
+        !active ||
+        !attachedRef.current ||
+        element.clientWidth === 0 ||
+        element.clientHeight === 0
+      ) {
+        return;
+      }
       fitRef.current?.fit();
       const term = termRef.current;
       if (term) resizeTerminal(contextKey, terminalId, term.cols, term.rows);
-    });
+    };
+
+    const observer = new ResizeObserver(fitAndResize);
     observer.observe(element);
+    let animationFrame: number | null = null;
     if (active) {
-      requestAnimationFrame(() => {
-        fitRef.current?.fit();
-        const term = termRef.current;
-        if (term) resizeTerminal(contextKey, terminalId, term.cols, term.rows);
-      });
+      animationFrame = requestAnimationFrame(fitAndResize);
     }
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      if (animationFrame !== null) cancelAnimationFrame(animationFrame);
+    };
   }, [active, contextKey, resizeTerminal, terminalId]);
 
   return (

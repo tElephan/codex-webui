@@ -3,7 +3,7 @@
  * Appears below the chat timeline.
  */
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { FileCode, X } from 'lucide-react';
+import { FileCode, Maximize2, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { FileTree } from '@/components/files/file-tree';
 import { FileViewer } from '@/components/files/file-viewer';
@@ -19,6 +19,7 @@ interface Props {
   threadId: string;
   cwd: string;
   onClose: () => void;
+  onOpenFileWindow: (filePath: string) => void;
   /** File path to open (from @mention or image badge click). */
   openFile?: string | null;
   /** Monotonic sequence number — ensures re-clicking the same file triggers a new open. */
@@ -40,12 +41,27 @@ function terminalIdFromTab(tab: string): string | null {
   return tab.startsWith('terminal:') ? tab.slice('terminal:'.length) : null;
 }
 
-export function SessionPanel({ threadId, cwd, onClose, openFile, openFileSeq, onFileOpened }: Props) {
+export function SessionPanel({
+  threadId,
+  cwd,
+  onClose,
+  onOpenFileWindow,
+  openFile,
+  openFileSeq,
+  onFileOpened,
+}: Props) {
   const { t } = useTranslation();
   useTerminalSocketEvents();
   const contextKey = `thread:${threadId}`;
-  const [activeTab, setActiveTab] = useState<string>('terminal');
-  const [fileTabs, setFileTabs] = useState<FileTab[]>([]);
+  const selectedFile = useFilesStore((s) => s.selectedFile);
+  const [activeTab, setActiveTab] = useState<string>(
+    () => selectedFile ?? 'terminal',
+  );
+  const [fileTabs, setFileTabs] = useState<FileTab[]>(() =>
+    selectedFile
+      ? [{ path: selectedFile, name: selectedFile.split('/').pop() ?? selectedFile }]
+      : [],
+  );
   const selectFile = useFilesStore((s) => s.selectFile);
   const terminalContext = useTerminalStore((s) => s.contexts[contextKey]);
   const ensureContext = useTerminalStore((s) => s.ensureContext);
@@ -181,6 +197,17 @@ export function SessionPanel({ threadId, cwd, onClose, openFile, openFileSeq, on
             ))}
           </div>
 
+          {!terminalVisible && (
+            <button
+              type="button"
+              onClick={() => onOpenFileWindow(activeTab)}
+              className="shrink-0 px-2 py-1.5 text-muted-foreground hover:text-foreground"
+              title={t('Open in Files window')}
+              aria-label={t('Open in Files window')}
+            >
+              <Maximize2 className="h-3.5 w-3.5" />
+            </button>
+          )}
           <button
             type="button"
             onClick={onClose}

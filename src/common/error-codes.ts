@@ -33,6 +33,8 @@ export const ErrorCode = {
     invalidToken: 'auth.invalid_token',
     missingHeader: 'auth.missing_header',
     invalidApiKey: 'auth.invalid_api_key',
+    /** Params: { retryAfter } */
+    rateLimited: 'auth.rate_limited',
   },
 
   // ── Files ──────────────────────────────────────────────────────────
@@ -113,6 +115,7 @@ export const ErrorCode = {
     invalidInputType: 'threads.invalid_input_type',
     invalidApprovalPolicy: 'threads.invalid_approval_policy',
     invalidSandboxMode: 'threads.invalid_sandbox_mode',
+    activeWriter: 'threads.active_writer',
     paginatedHistoryRequired: 'threads.paginated_history_required',
     branchEditedTurnRequired: 'threads.branch_edited_turn_required',
     branchEditedTurnNotFound: 'threads.branch_edited_turn_not_found',

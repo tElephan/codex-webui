@@ -2,20 +2,25 @@
  * Authenticated layout: sidebar + header + main content outlet.
  * Replaces the old App.tsx conditional rendering.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import {
-  Sheet,
-  SheetContent,
-  SheetTitle,
-} from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { ChatHeader } from '@/components/chat/chat-header';
 import { ThreadSidebar } from '@/components/chat/thread-sidebar';
 import { SnackbarContainer } from '@/components/snackbar/snackbar-container';
 import { CodexStatusBanner } from '@/components/codex-status-banner';
+import { FilesPanel } from '@/components/files/files-panel';
+import { TerminalRiskGate } from '@/components/terminal/terminal-risk-gate';
+import { TerminalWorkspace } from '@/components/terminal/terminal-workspace';
+import { SettingsPage } from '@/components/settings/settings-page';
+import { IntegrationsPage } from '@/components/integrations/integrations-page';
+import {
+  UtilityWindow,
+  type UtilityWindowKind,
+} from '@/components/utility-window';
 import { useBreakpoint } from '@/hooks/use-breakpoint';
 import { useCodexSocket } from '@/hooks/use-codex-socket';
 import { useFilesStore } from '@/stores/files-store';
@@ -35,17 +40,54 @@ import {
 import { settingsListSettingsQueryKey } from '@/generated/api/@tanstack/react-query.gen';
 import type { PendingServerRequestDto } from '@/generated/api';
 import type { ApprovalRequest } from '@/types/approval';
-import { parseAvailableDecisions, parseStringArray, parseNetworkAmendments } from '@/lib/approval-parsers';
+import {
+  parseAvailableDecisions,
+  parseStringArray,
+  parseNetworkAmendments,
+} from '@/lib/approval-parsers';
 import { userInputFromPending } from '@/lib/user-input-parsers';
 
 const MAX_IDLE_SUBSCRIPTIONS_KEY = 'general.maxIdleSubscriptions';
 const DEFAULT_MAX_IDLE_SUBSCRIPTIONS = 30;
 const IDLE_SUBSCRIPTION_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
 
-function approvalFromPending(request: PendingServerRequestDto): ApprovalRequest | null {
+function utilityWindowKind(pathname: string): UtilityWindowKind | null {
+  if (pathname.startsWith('/files')) return 'files';
+  if (pathname.startsWith('/terminal')) return 'terminal';
+  if (pathname.startsWith('/settings')) return 'settings';
+  if (pathname.startsWith('/integrations')) return 'integrations';
+  return null;
+}
+
+function PersistentUtilityWindow({
+  kind,
+  visible,
+  onHide,
+  children,
+}: {
+  kind: UtilityWindowKind;
+  visible: boolean;
+  onHide: () => void;
+  children: ReactNode;
+}) {
+  const [mounted, setMounted] = useState(visible);
+  if (visible && !mounted) setMounted(true);
+  if (!mounted) return null;
+  return (
+    <UtilityWindow kind={kind} visible={visible} onHide={onHide}>
+      {children}
+    </UtilityWindow>
+  );
+}
+
+function approvalFromPending(
+  request: PendingServerRequestDto,
+): ApprovalRequest | null {
   const params = request.params;
-  const turnId = typeof params.turnId === 'string' ? params.turnId : request.turnId;
-  const itemId = typeof params.itemId === 'string' ? params.itemId : request.itemId;
+  const turnId =
+    typeof params.turnId === 'string' ? params.turnId : request.turnId;
+  const itemId =
+    typeof params.itemId === 'string' ? params.itemId : request.itemId;
   if (!turnId || !itemId || request.status !== 'pending') return null;
 
   if (request.method === 'item/commandExecution/requestApproval') {
@@ -60,8 +102,12 @@ function approvalFromPending(request: PendingServerRequestDto): ApprovalRequest 
       cwd: (params.cwd as string) ?? null,
       reason: (params.reason as string) ?? null,
       availableDecisions: parseAvailableDecisions(params.availableDecisions),
-      proposedExecpolicyAmendment: parseStringArray(params.proposedExecpolicyAmendment),
-      proposedNetworkPolicyAmendments: parseNetworkAmendments(params.proposedNetworkPolicyAmendments),
+      proposedExecpolicyAmendment: parseStringArray(
+        params.proposedExecpolicyAmendment,
+      ),
+      proposedNetworkPolicyAmendments: parseNetworkAmendments(
+        params.proposedNetworkPolicyAmendments,
+      ),
     };
   }
 
@@ -95,21 +141,37 @@ function readMaxIdleSubscriptions(
 export function AuthenticatedLayout() {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const utilityWindow = utilityWindowKind(pathname);
   const [homeDir, setHomeDir] = useState<string | null>(null);
 
   const threadCwd = useTimelineStore((s) => s.threadCwd);
   const addApprovalForThread = useTimelineStore((s) => s.addApprovalForThread);
-  const addUserInputRequestForThread = useTimelineStore((s) => s.addUserInputRequestForThread);
+  const addUserInputRequestForThread = useTimelineStore(
+    (s) => s.addUserInputRequestForThread,
+  );
   const ensureThreadState = useTimelineStore((s) => s.ensureThreadState);
-  const hydrateTimelineForThread = useTimelineStore((s) => s.hydrateTimelineForThread);
+  const hydrateTimelineForThread = useTimelineStore(
+    (s) => s.hydrateTimelineForThread,
+  );
   const setLoadingForThread = useTimelineStore((s) => s.setLoadingForThread);
-  const setThreadStatusForThread = useTimelineStore((s) => s.setThreadStatusForThread);
-  const setActiveTurnIdForThread = useTimelineStore((s) => s.setActiveTurnIdForThread);
-  const setThreadTitleForThread = useTimelineStore((s) => s.setThreadTitleForThread);
+  const setThreadStatusForThread = useTimelineStore(
+    (s) => s.setThreadStatusForThread,
+  );
+  const setActiveTurnIdForThread = useTimelineStore(
+    (s) => s.setActiveTurnIdForThread,
+  );
+  const setThreadTitleForThread = useTimelineStore(
+    (s) => s.setThreadTitleForThread,
+  );
   const setActiveThread = useTimelineStore((s) => s.setActiveThread);
-  const setMaxIdleSubscriptions = useTimelineStore((s) => s.setMaxIdleSubscriptions);
-  const cleanupIdleThreadSubscriptions = useTimelineStore((s) => s.cleanupIdleThreadSubscriptions);
-  const setRootDir = useFilesStore((s) => s.setRootDir);
+  const setMaxIdleSubscriptions = useTimelineStore(
+    (s) => s.setMaxIdleSubscriptions,
+  );
+  const cleanupIdleThreadSubscriptions = useTimelineStore(
+    (s) => s.cleanupIdleThreadSubscriptions,
+  );
+  const activateFilesContext = useFilesStore((s) => s.activateContext);
+  const filesHydrated = useFilesStore((s) => s.hydrated);
   const dark = useThemeStore((s) => s.dark);
   const toggleDark = useThemeStore((s) => s.toggleDark);
   const generalSettingsQuery = useQuery({
@@ -214,12 +276,15 @@ export function AuthenticatedLayout() {
           const approval = approvalFromPending(request);
           if (approval) addApprovalForThread(request.threadId, approval);
           const userInput = userInputFromPending(request);
-          if (userInput) addUserInputRequestForThread(request.threadId, userInput);
+          if (userInput)
+            addUserInputRequestForThread(request.threadId, userInput);
         }
       })
       .catch(() => undefined);
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [
     addApprovalForThread,
     addUserInputRequestForThread,
@@ -234,13 +299,15 @@ export function AuthenticatedLayout() {
   // Handle snackbar jump-to-thread actions.
   useEffect(() => {
     const handleJump = (event: Event) => {
-      const threadId = (event as CustomEvent<{ threadId?: string }>).detail?.threadId;
+      const threadId = (event as CustomEvent<{ threadId?: string }>).detail
+        ?.threadId;
       if (!threadId) return;
       setActiveThread(threadId);
       void navigate({ to: '/t/$threadId', params: { threadId } });
     };
     window.addEventListener('codex-webui:jump-thread', handleJump);
-    return () => window.removeEventListener('codex-webui:jump-thread', handleJump);
+    return () =>
+      window.removeEventListener('codex-webui:jump-thread', handleJump);
   }, [navigate, setActiveThread]);
 
   // Handle auth expiry → redirect to /login
@@ -251,24 +318,34 @@ export function AuthenticatedLayout() {
       void navigate({ to: '/login', search: { redirect: '/' } });
     };
     window.addEventListener('codex-webui:auth-expired', handleAuthExpired);
-    return () => window.removeEventListener('codex-webui:auth-expired', handleAuthExpired);
+    return () =>
+      window.removeEventListener('codex-webui:auth-expired', handleAuthExpired);
   }, [navigate]);
 
   // Sync file tree root based on current route context
   useEffect(() => {
-    const dir = pathname.startsWith('/files')
-      ? homeDir
+    if (!filesHydrated) return;
+    const context = pathname.startsWith('/files')
+      ? 'window'
       : pathname.startsWith('/t/')
-        ? threadCwd
-        : null;
+        ? 'thread'
+        : 'none';
+    const dir =
+      context === 'window' ? homeDir : context === 'thread' ? threadCwd : null;
     if (dir) {
-      void filesAddRoot({ body: { root: dir }, throwOnError: true, meta: { silent: true } })
-        .then(() => setRootDir(dir))
-        .catch(() => { /* root rejected */ });
+      void filesAddRoot({
+        body: { root: dir },
+        throwOnError: true,
+        meta: { silent: true },
+      })
+        .then(() => activateFilesContext(context, dir))
+        .catch(() => {
+          /* root rejected */
+        });
     } else {
-      setRootDir(null);
+      activateFilesContext(context, null);
     }
-  }, [pathname, threadCwd, homeDir, setRootDir]);
+  }, [pathname, threadCwd, homeDir, activateFilesContext, filesHydrated]);
 
   const { t } = useTranslation();
   const handleToggleDiagnostics = useCallback(() => {
@@ -280,7 +357,17 @@ export function AuthenticatedLayout() {
   const isDesktop = breakpoint === 'desktop';
   const sidebarOpen = useLayoutStore((s) => s.sidebarOpen);
   const setSidebarOpen = useLayoutStore((s) => s.setSidebarOpen);
-  const desktopSidebarCollapsed = useLayoutStore((s) => s.desktopSidebarCollapsed);
+  const desktopSidebarCollapsed = useLayoutStore(
+    (s) => s.desktopSidebarCollapsed,
+  );
+  const hideUtilityWindow = useCallback(() => {
+    const threadId = useTimelineStore.getState().threadId;
+    if (threadId) {
+      void navigate({ to: '/t/$threadId', params: { threadId } });
+    } else {
+      void navigate({ to: '/' });
+    }
+  }, [navigate]);
 
   // Auto-close sidebar sheet on route change
   useEffect(() => {
@@ -298,6 +385,7 @@ export function AuthenticatedLayout() {
         {/* Desktop: inline sidebar with collapse animation */}
         {isDesktop && (
           <aside
+            data-app-sidebar
             className={cn(
               'relative z-10 shrink-0 overflow-hidden border-r border-[var(--glass-border-subtle)] transition-[width] duration-200 ease-in-out',
               desktopSidebarCollapsed ? 'w-0 border-r-0' : 'w-64',
@@ -312,7 +400,11 @@ export function AuthenticatedLayout() {
         {/* Mobile/Tablet: sidebar as Sheet overlay */}
         {!isDesktop && (
           <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-            <SheetContent side="left" className="!w-[280px] p-0 sm:!max-w-[320px]" showCloseButton={false}>
+            <SheetContent
+              side="left"
+              className="!w-[280px] p-0 sm:!max-w-[320px]"
+              showCloseButton={false}
+            >
               <SheetTitle className="sr-only">{t('Navigation')}</SheetTitle>
               <ThreadSidebar />
             </SheetContent>
@@ -326,8 +418,42 @@ export function AuthenticatedLayout() {
             onToggleDiagnostics={handleToggleDiagnostics}
           />
           <CodexStatusBanner />
-          <Outlet />
+          {!utilityWindow && <Outlet />}
         </div>
+
+        <PersistentUtilityWindow
+          kind="files"
+          visible={utilityWindow === 'files'}
+          onHide={hideUtilityWindow}
+        >
+          <FilesPanel />
+        </PersistentUtilityWindow>
+        <PersistentUtilityWindow
+          kind="terminal"
+          visible={utilityWindow === 'terminal'}
+          onHide={hideUtilityWindow}
+        >
+          <TerminalRiskGate onCancel={hideUtilityWindow}>
+            <TerminalWorkspace
+              contextKey="global"
+              visible={utilityWindow === 'terminal'}
+            />
+          </TerminalRiskGate>
+        </PersistentUtilityWindow>
+        <PersistentUtilityWindow
+          kind="settings"
+          visible={utilityWindow === 'settings'}
+          onHide={hideUtilityWindow}
+        >
+          <SettingsPage />
+        </PersistentUtilityWindow>
+        <PersistentUtilityWindow
+          kind="integrations"
+          visible={utilityWindow === 'integrations'}
+          onHide={hideUtilityWindow}
+        >
+          <IntegrationsPage />
+        </PersistentUtilityWindow>
       </div>
       <SnackbarContainer />
     </TooltipProvider>

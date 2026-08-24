@@ -101,9 +101,17 @@ export function buildContentDisposition(
   filename: string,
   inline: boolean,
 ): string {
-  const fallback = filename.replace(/[\r\n"\\]/g, '_');
+  // Keep the legacy filename parameter strictly printable ASCII. The real
+  // UTF-8 name is carried by the RFC 5987 filename* parameter below.
+  const fallback = filename
+    .replace(/[^\x20-\x7e]/g, '_')
+    .replace(/["\\]/g, '_');
+  const encodedFilename = encodeURIComponent(filename).replace(
+    /['()*]/g,
+    (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
   const disposition = inline ? 'inline' : 'attachment';
-  return `${disposition}; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
+  return `${disposition}; filename="${fallback}"; filename*=UTF-8''${encodedFilename}`;
 }
 
 /** Parses a single RFC 9110 bytes range header, returning null for absent and 'invalid' for unsatisfiable values. */

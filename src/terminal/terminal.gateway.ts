@@ -92,7 +92,7 @@ export class TerminalGateway
         config: this.terminalService.getConfig(),
       };
     } catch (error) {
-      return this.toErrorAck(error);
+      return this.toErrorAck(error, 'list');
     }
   }
 
@@ -107,7 +107,7 @@ export class TerminalGateway
       this.logger.debug(`Client ${client.id} opened terminal ${terminal.id}`);
       return { ok: true, terminal, config: this.terminalService.getConfig() };
     } catch (error) {
-      return this.toErrorAck(error);
+      return this.toErrorAck(error, 'open');
     }
   }
 
@@ -130,7 +130,7 @@ export class TerminalGateway
         config: this.terminalService.getConfig(),
       };
     } catch (error) {
-      return this.toErrorAck(error);
+      return this.toErrorAck(error, 'reconnect', data.terminalId);
     }
   }
 
@@ -147,7 +147,7 @@ export class TerminalGateway
       );
       return { ok: true };
     } catch (error) {
-      return this.emitError(client, error);
+      return this.emitError(client, error, 'detach', data?.terminalId);
     }
   }
 
@@ -166,7 +166,7 @@ export class TerminalGateway
       );
       return { ok: true };
     } catch (error) {
-      return this.emitError(client, error);
+      return this.emitError(client, error, 'input', data.terminalId);
     }
   }
 
@@ -186,7 +186,9 @@ export class TerminalGateway
       );
       return { ok: true, terminal };
     } catch (error) {
-      return this.emitError(client, error);
+      // Resize is a background layout event. A stale observer must not surface
+      // a global error snackbar after its pane has been hidden or removed.
+      return this.toErrorAck(error, 'resize', data.terminalId);
     }
   }
 
@@ -205,7 +207,7 @@ export class TerminalGateway
       );
       return { ok: true, terminal };
     } catch (error) {
-      return this.emitError(client, error);
+      return this.emitError(client, error, 'rename', data.terminalId);
     }
   }
 
@@ -223,7 +225,7 @@ export class TerminalGateway
       );
       return { ok: true, data: payload };
     } catch (error) {
-      return this.emitError(client, error);
+      return this.emitError(client, error, 'download', data.terminalId);
     }
   }
 
@@ -237,7 +239,7 @@ export class TerminalGateway
       this.terminalService.close(client.id, data.contextKey, data.terminalId);
       return { ok: true };
     } catch (error) {
-      return this.emitError(client, error);
+      return this.emitError(client, error, 'close', data.terminalId);
     }
   }
 
@@ -254,15 +256,22 @@ export class TerminalGateway
   private emitError<T = unknown>(
     client: Socket,
     error: unknown,
+    operation: string,
+    terminalId?: string,
   ): TerminalAck<T> {
-    const ack = this.toErrorAck<T>(error);
+    const ack = this.toErrorAck<T>(error, operation, terminalId);
     client.emit('terminal.error', { error: ack.error });
     return ack;
   }
 
-  private toErrorAck<T = unknown>(error: unknown): TerminalAck<T> {
+  private toErrorAck<T = unknown>(
+    error: unknown,
+    operation: string,
+    terminalId?: string,
+  ): TerminalAck<T> {
     const message = error instanceof Error ? error.message : String(error);
-    this.logger.warn(`Terminal operation failed: ${message}`);
+    const target = terminalId ? ` for ${terminalId}` : '';
+    this.logger.warn(`Terminal ${operation} failed${target}: ${message}`);
     return { ok: false, error: message };
   }
 }

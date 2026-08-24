@@ -6,6 +6,7 @@ import { useMemo, type ComponentProps } from 'react';
 import Markdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { FileText, ImageIcon } from 'lucide-react';
+import { openFileInPanel } from '@/lib/local-file-link';
 import { remarkMentions } from '@/lib/remark-mentions';
 import { normalizeMessageMentions } from '@/lib/mention-utils';
 
@@ -13,13 +14,6 @@ interface Props {
   content: string;
   threadCwd: string | null;
   images?: string[];
-}
-
-/** Dispatches a custom event to open a file in the session panel. */
-function openFileInPanel(absolutePath: string): void {
-  window.dispatchEvent(
-    new CustomEvent('codex-webui:open-file', { detail: { path: absolutePath } }),
-  );
 }
 
 /** Allow `mention:` scheme through react-markdown's URL sanitizer. */

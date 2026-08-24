@@ -33,10 +33,17 @@ export function getApiErrorMessage(
   return fallback;
 }
 
+/** Extracts a structured API error code when one is present. */
+export function getApiErrorCode(error: unknown): string | undefined {
+  if (!isRecord(error)) return undefined;
+  return typeof error.errorCode === 'string' ? error.errorCode : undefined;
+}
+
 function normalizeMessage(message: unknown): string | undefined {
   if (Array.isArray(message)) {
     const values = message.filter(
-      (item): item is string => typeof item === 'string' && item.trim().length > 0,
+      (item): item is string =>
+        typeof item === 'string' && item.trim().length > 0,
     );
     return values.length > 0 ? values.join(', ') : undefined;
   }

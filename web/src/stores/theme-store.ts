@@ -14,6 +14,9 @@ function getSystemPrefersDark(): boolean {
 
 function applyDarkClass(dark: boolean) {
   document.documentElement.classList.toggle('dark', dark);
+  document
+    .querySelector<HTMLMetaElement>('meta[name="theme-color"]')
+    ?.setAttribute('content', dark ? '#17191f' : '#f7f8fa');
 }
 
 /**

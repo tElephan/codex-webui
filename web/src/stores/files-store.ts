@@ -3,6 +3,9 @@
  * REST data (tree, content, metadata) is managed by TanStack Query.
  */
 import { create } from 'zustand';
+import { createJSONStorage, persist } from 'zustand/middleware';
+
+type FilesContext = 'none' | 'window' | 'thread';
 
 interface FilesState {
   /** Current root directory (from thread cwd or home). */
@@ -15,37 +18,136 @@ interface FilesState {
   expandedDirs: Set<string>;
   /** Mtime of currently open file (for conflict detection). */
   fileMtime: number | null;
+  /** Currently active consumer of the shared file browser state. */
+  activeContext: FilesContext;
+  /** File-window state kept while the window is hidden. */
+  windowRootDir: string | null;
+  windowSelectedFile: string | null;
+  windowFileTabs: string[];
+  hydrated: boolean;
 
   setRootDir: (dir: string | null) => void;
   selectFile: (filePath: string | null) => void;
+  selectFileForWindow: (filePath: string) => void;
+  closeFileForWindow: (filePath: string) => void;
+  activateContext: (context: FilesContext, defaultRoot?: string | null) => void;
+  setHydrated: (hydrated: boolean) => void;
   setPanelOpen: (open: boolean) => void;
   toggleDirectory: (dirPath: string) => void;
   setFileMtime: (mtime: number | null) => void;
   navigateUp: () => void;
 }
 
-export const useFilesStore = create<FilesState>((set, get) => ({
+const STORAGE_KEY = 'codex-webui.files.v1';
+
+export const useFilesStore = create<FilesState>()(
+  persist((set, get) => ({
   rootDir: null,
   selectedFile: null,
   panelOpen: false,
   expandedDirs: new Set<string>(),
   fileMtime: null,
+  activeContext: 'none',
+  windowRootDir: null,
+  windowSelectedFile: null,
+  windowFileTabs: [],
+  hydrated: false,
 
   setRootDir: (dir: string | null) => {
     if (dir === get().rootDir) return;
-    set({
+    const selectedFile = get().selectedFile;
+    const keepSelectedFile = Boolean(
+      dir &&
+      selectedFile &&
+      (selectedFile === dir || selectedFile.startsWith(`${dir}/`)),
+    );
+    const next = {
       rootDir: dir,
-      selectedFile: null,
+      selectedFile: keepSelectedFile ? selectedFile : null,
       expandedDirs: new Set<string>(),
-      fileMtime: null,
-    });
+      fileMtime: keepSelectedFile ? get().fileMtime : null,
+    };
+    set(get().activeContext === 'window'
+      ? {
+          ...next,
+          windowRootDir: dir,
+          windowSelectedFile: next.selectedFile,
+        }
+      : next);
   },
 
   selectFile: (filePath: string | null) => {
-    set({ selectedFile: filePath, panelOpen: filePath !== null, fileMtime: null });
+    const next = { selectedFile: filePath, panelOpen: filePath !== null, fileMtime: null };
+    set(get().activeContext === 'window'
+      ? { ...next, windowSelectedFile: filePath }
+      : next);
+  },
+
+  selectFileForWindow: (filePath: string) => {
+    set((state) => ({
+      windowSelectedFile: filePath,
+      windowFileTabs: state.windowFileTabs.includes(filePath)
+        ? state.windowFileTabs
+        : [...state.windowFileTabs, filePath],
+      ...(state.activeContext === 'window'
+        ? { selectedFile: filePath, panelOpen: true, fileMtime: null }
+        : {}),
+    }));
+  },
+
+  closeFileForWindow: (filePath: string) => {
+    set((state) => {
+      const closedIndex = state.windowFileTabs.indexOf(filePath);
+      const windowFileTabs = state.windowFileTabs.filter((path) => path !== filePath);
+      const nextSelected = state.windowSelectedFile === filePath
+        ? windowFileTabs[Math.min(closedIndex, windowFileTabs.length - 1)] ?? null
+        : state.windowSelectedFile;
+      return {
+        windowFileTabs,
+        windowSelectedFile: nextSelected,
+        ...(state.activeContext === 'window'
+          ? { selectedFile: nextSelected, fileMtime: null }
+          : {}),
+      };
+    });
+  },
+
+  activateContext: (context: FilesContext, defaultRoot = null) => {
+    const state = get();
+    if (context === 'window') {
+      set({
+        activeContext: context,
+        rootDir: state.windowRootDir ?? defaultRoot,
+        selectedFile: state.windowSelectedFile,
+        fileMtime: null,
+        expandedDirs: new Set<string>(),
+      });
+      return;
+    }
+
+    if (context === 'thread') {
+      const selectedFile = state.selectedFile;
+      const keepSelectedFile = Boolean(
+        defaultRoot &&
+        selectedFile &&
+        (selectedFile === defaultRoot || selectedFile.startsWith(`${defaultRoot}/`)),
+      );
+      set({
+        activeContext: context,
+        rootDir: defaultRoot,
+        selectedFile: keepSelectedFile ? selectedFile : null,
+        fileMtime: keepSelectedFile ? state.fileMtime : null,
+        expandedDirs: new Set<string>(),
+      });
+      return;
+    }
+
+    set({ activeContext: context });
   },
 
   setPanelOpen: (open: boolean) => set({ panelOpen: open }),
+
+  setHydrated: (hydrated: boolean) => set({ hydrated }),
 
   toggleDirectory: (dirPath: string) => {
     set((s) => {
@@ -67,4 +169,18 @@ export const useFilesStore = create<FilesState>((set, get) => ({
     const parent = rootDir.substring(0, rootDir.lastIndexOf('/')) || '/';
     get().setRootDir(parent);
   },
-}));
+  }), {
+    name: STORAGE_KEY,
+    storage: createJSONStorage(() => sessionStorage),
+    // The active thread file state is tied to the current route/cwd. Keep the
+    // independent global Files window state across a browser refresh instead.
+    partialize: (state) => ({
+      windowRootDir: state.windowRootDir,
+      windowSelectedFile: state.windowSelectedFile,
+      windowFileTabs: state.windowFileTabs,
+    }),
+    onRehydrateStorage: () => (state) => {
+      state?.setHydrated(true);
+    },
+  }),
+);

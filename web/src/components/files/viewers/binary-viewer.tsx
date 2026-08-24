@@ -1,7 +1,8 @@
 /** Binary fallback viewer showing metadata and a hex dump of the first 256 bytes. */
 import { useEffect, useMemo, useState } from 'react';
-import { Binary, Loader2 } from 'lucide-react';
+import { Binary, Loader2, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { Button } from '@/components/ui/button';
 import { filesGetMetadata } from '@/generated/api/sdk.gen';
 import { fetchPreviewBytes, type PreviewSource } from './preview-source';
 
@@ -16,6 +17,7 @@ interface Metadata {
 
 export function BinaryViewer({ source }: Props) {
   const { t } = useTranslation();
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [bytes, setBytes] = useState<Uint8Array | null>(null);
   const [metadata, setMetadata] = useState<Metadata>({ size: source.kind === 'archive' ? source.size : undefined });
   const [error, setError] = useState<string | null>(null);
@@ -26,27 +28,44 @@ export function BinaryViewer({ source }: Props) {
     setPrevSource(source);
     setBytes(null);
     setError(null);
+    setLoadAttempt(0);
     setMetadata({ size: source.kind === 'archive' ? source.size : undefined });
   }
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([loadMetadata(source), fetchPreviewBytes(source, 'bytes=0-255')])
-      .then(([meta, result]) => {
+    void loadBinaryPreview(source)
+      .then(({ meta, result }) => {
         if (cancelled) return;
         setMetadata({
           size: meta.size ?? (source.kind === 'archive' ? source.size : undefined),
-          mimeType: result.response.headers.get('content-type') ?? meta.mimeType,
+          mimeType: result?.response.headers.get('content-type') ?? meta.mimeType,
         });
-        setBytes(new Uint8Array(result.buffer));
+        setBytes(result ? new Uint8Array(result.buffer) : new Uint8Array());
       })
       .catch(() => { if (!cancelled) setError(t('Failed to load binary preview')); });
     return () => { cancelled = true; };
-  }, [source, t]);
+  }, [loadAttempt, source, t]);
 
   const rows = useMemo(() => (bytes ? toHexRows(bytes) : []), [bytes]);
 
-  if (error) return <BinaryMessage message={error} />;
+  if (error) {
+    return (
+      <BinaryMessage
+        message={error}
+        action={(
+          <Button size="sm" variant="outline" onClick={() => {
+            setBytes(null);
+            setError(null);
+            setLoadAttempt((attempt) => attempt + 1);
+          }}>
+            <RefreshCw className="h-3.5 w-3.5" />
+            {t('Retry')}
+          </Button>
+        )}
+      />
+    );
+  }
   if (!bytes) return <BinaryMessage icon={<Loader2 className="h-4 w-4 animate-spin" />} message={t('Loading...')} />;
 
   return (
@@ -55,11 +74,24 @@ export function BinaryViewer({ source }: Props) {
         <div><span className="text-muted-foreground">{t('Size')}:</span> {metadata.size ?? t('Unknown')}</div>
         <div><span className="text-muted-foreground">{t('MIME type')}:</span> {metadata.mimeType ?? t('Unknown')}</div>
       </div>
-      <pre className="overflow-auto rounded-lg border border-border bg-muted/30 p-4 font-mono text-xs leading-5">
-        {rows.join('\n')}
-      </pre>
+      {bytes.length === 0 ? (
+        <div className="flex min-h-32 items-center justify-center rounded-lg border border-border bg-muted/30 text-sm text-muted-foreground">
+          {t('Empty file')}
+        </div>
+      ) : (
+        <pre className="overflow-auto rounded-lg border border-border bg-muted/30 p-4 font-mono text-xs leading-5">
+          {rows.join('\n')}
+        </pre>
+      )}
     </div>
   );
+}
+
+async function loadBinaryPreview(source: PreviewSource) {
+  const meta = await loadMetadata(source);
+  if (meta.size === 0) return { meta, result: null };
+  const result = await fetchPreviewBytes(source, 'bytes=0-255');
+  return { meta, result };
 }
 
 async function loadMetadata(source: PreviewSource): Promise<Metadata> {
@@ -83,11 +115,14 @@ function toHexRows(bytes: Uint8Array): string[] {
   return rows;
 }
 
-function BinaryMessage({ icon, message }: { icon?: React.ReactNode; message: string }) {
+function BinaryMessage({ icon, message, action }: { icon?: React.ReactNode; message: string; action?: React.ReactNode }) {
   return (
-    <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
-      {icon ?? <Binary className="h-5 w-5 opacity-50" />}
-      {message}
+    <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+      <div className="flex items-center gap-2">
+        {icon ?? <Binary className="h-5 w-5 opacity-50" />}
+        {message}
+      </div>
+      {action}
     </div>
   );
 }

@@ -1,9 +1,9 @@
-/** Image viewer using the authenticated /api/files/serve endpoint. */
-import { useState } from 'react';
-import { ImageIcon, ZoomIn, ZoomOut, RotateCw } from 'lucide-react';
+/** Image viewer using an authenticated fetch and a local Blob URL. */
+import { useEffect, useState } from 'react';
+import { ImageIcon, Loader2, RefreshCw, ZoomIn, ZoomOut, RotateCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
-import { buildPreviewUrl, filePreviewSource, type PreviewSource } from './preview-source';
+import { fetchPreviewBlob, filePreviewSource, type PreviewSource } from './preview-source';
 
 interface Props {
   filePath: string;
@@ -12,25 +12,51 @@ interface Props {
 
 export function ImageViewer({ filePath, source }: Props) {
   const { t } = useTranslation();
+  const previewSource = source ?? filePreviewSource(filePath);
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [error, setError] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
-  // Reset state when switching to a different image (adjusting state during render)
-  const [prevFilePath, setPrevFilePath] = useState(filePath);
-  if (filePath !== prevFilePath) {
-    setPrevFilePath(filePath);
-    setError(false);
-    setZoom(1);
-    setRotation(0);
-  }
 
-  const src = buildPreviewUrl(source ?? filePreviewSource(filePath));
+  useEffect(() => {
+    let cancelled = false;
+    let currentUrl: string | null = null;
+    void fetchPreviewBlob(previewSource)
+      .then((blob) => {
+        if (cancelled) return;
+        currentUrl = URL.createObjectURL(blob);
+        setBlobUrl(currentUrl);
+      })
+      .catch(() => { if (!cancelled) setError(true); });
+    return () => {
+      cancelled = true;
+      if (currentUrl) URL.revokeObjectURL(currentUrl);
+    };
+  }, [loadAttempt, previewSource]);
 
   if (error) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
         <ImageIcon className="h-8 w-8 opacity-40" />
         <span className="text-sm">{t('Failed to load image')}</span>
+        <Button size="sm" variant="outline" onClick={() => {
+          setBlobUrl(null);
+          setError(false);
+          setLoadAttempt((attempt) => attempt + 1);
+        }}>
+          <RefreshCw className="h-3.5 w-3.5" />
+          {t('Retry')}
+        </Button>
+      </div>
+    );
+  }
+
+  if (!blobUrl) {
+    return (
+      <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        {t('Loading...')}
       </div>
     );
   }
@@ -85,10 +111,10 @@ export function ImageViewer({ filePath, source }: Props) {
       {/* Image area with checkerboard background for transparency */}
       <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-[repeating-conic-gradient(hsl(var(--muted))_0%_25%,transparent_0%_50%)] bg-[length:16px_16px]">
         <img
-          src={src}
+          src={blobUrl}
           alt={filePath.split('/').pop() ?? ''}
           onError={() => setError(true)}
-          className="max-w-none object-contain transition-transform"
+          className="block max-h-full max-w-full object-contain transition-transform"
           style={{
             transform: `scale(${zoom}) rotate(${rotation}deg)`,
           }}

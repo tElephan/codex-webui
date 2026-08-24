@@ -1,12 +1,18 @@
 /** PDF viewer using react-pdf with a locally bundled pdf.js worker. */
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
-import { ChevronLeft, ChevronRight, FileText, Loader2, ZoomIn, ZoomOut } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, FileText, Loader2, ZoomIn, ZoomOut } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
-import { buildPreviewUrl, fetchPreviewBlob, type PreviewSource } from './preview-source';
+import { showSnackbar } from '@/stores/snackbar-store';
+import {
+  buildPreviewUrl,
+  fetchPreviewBlob,
+  previewSourceLabel,
+  type PreviewSource,
+} from './preview-source';
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -56,6 +62,22 @@ export function PdfViewer({ source }: Props) {
     };
   }, [source, t]);
 
+  const handleDownload = useCallback(async () => {
+    try {
+      const blob = await fetchPreviewBlob(source);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = previewSourceLabel(source).split('/').pop() ?? 'document.pdf';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      showSnackbar(t('Download failed'), 'error');
+    }
+  }, [source, t]);
+
   if (error) return <PdfMessage message={error} />;
 
   return (
@@ -69,6 +91,16 @@ export function PdfViewer({ source }: Props) {
         </span>
         <Button size="icon" variant="ghost" className="h-6 w-6" disabled={!numPages || pageNumber >= numPages} onClick={() => setPageNumber((p) => Math.min(numPages, p + 1))} title={t('Next page')}>
           <ChevronRight className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          size="xs"
+          variant="ghost"
+          className="h-6 px-1.5"
+          onClick={() => void handleDownload()}
+          title={t('Download')}
+        >
+          <Download className="h-3.5 w-3.5" />
+          {t('Download')}
         </Button>
         <div className="ml-auto flex items-center gap-1">
           <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setZoom((z) => Math.max(0.5, z - 0.1))} title={t('Zoom out')}>

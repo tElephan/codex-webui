@@ -4,6 +4,7 @@ import { CodexService } from '../codex/codex.service';
 import { ThreadResumeRegistryService } from './thread-resume-registry.service';
 import { ConversationBranchesService } from '../conversation-branches/conversation-branches.service';
 import { ErrorCode } from '../common/error-codes';
+import { CodexRpcError } from '../codex/codex-errors';
 import { ThreadsBranchingService } from './threads-branching.service';
 
 /** Branch state as the local-only service reports it for an untracked thread. */
@@ -22,6 +23,7 @@ describe('ThreadsService', () => {
   const mockCodex = { request: jest.fn() };
   const mockResumeRegistry = {
     ensureResumed: jest.fn(),
+    isResumed: jest.fn(),
     markResumed: jest.fn(),
     cacheResponse: jest.fn(),
     forget: jest.fn(),
@@ -63,6 +65,7 @@ describe('ThreadsService', () => {
     mockBranches.resolveTreeRootThreadId.mockImplementation(
       (threadId: string): string => threadId,
     );
+    mockResumeRegistry.isResumed.mockReturnValue(true);
   });
 
   it('starts new threads in paginated history mode', async () => {
@@ -128,12 +131,48 @@ describe('ThreadsService', () => {
     });
   });
 
+  it('returns empty turns for a new paginated thread without turn history', async () => {
+    mockCodex.request
+      .mockRejectedValueOnce(
+        new CodexRpcError({
+          code: -32601,
+          message: 'list_turns is not supported yet',
+        }),
+      )
+      .mockResolvedValueOnce({
+        thread: { id: 't1', historyMode: 'paginated' },
+      });
+
+    await expect(service.readThread('t1', true)).resolves.toEqual({
+      thread: { id: 't1', historyMode: 'paginated', turns: [] },
+    });
+    expect(mockCodex.request).toHaveBeenNthCalledWith(2, 'thread/read', {
+      threadId: 't1',
+      includeTurns: false,
+    });
+  });
+
   it('should ensure resume via registry', async () => {
     const response = { thread: { id: 't1' }, cwd: '/tmp' };
     mockResumeRegistry.ensureResumed.mockResolvedValue(response);
 
     await expect(service.resumeThread('t1')).resolves.toBe(response);
     expect(mockResumeRegistry.ensureResumed).toHaveBeenCalledWith('t1');
+  });
+
+  it('reports a conflict when another app-server owns the thread writer', async () => {
+    mockResumeRegistry.ensureResumed.mockRejectedValue(
+      new CodexRpcError({
+        code: -32600,
+        message: 'thread t1 already has an active writer',
+        method: 'thread/resume',
+      }),
+    );
+
+    await expect(service.resumeThread('t1')).rejects.toMatchObject({
+      errorCode: ErrorCode.threads.activeWriter,
+      params: { threadId: 't1' },
+    });
   });
 
   it('should call turn/start', async () => {
@@ -153,6 +192,71 @@ describe('ThreadsService', () => {
       'turn1',
       'hello',
     );
+  });
+
+  it('resumes an unloaded thread before starting a turn', async () => {
+    mockResumeRegistry.isResumed.mockReturnValue(false);
+    mockResumeRegistry.ensureResumed.mockResolvedValue({
+      thread: { id: 't1' },
+      cwd: '/tmp',
+    });
+    mockCodex.request.mockResolvedValue({ turn: { id: 'turn1' } });
+
+    await service.startTurn({
+      threadId: 't1',
+      input: [{ type: 'text', text: 'hello' }] as never,
+    });
+
+    expect(mockResumeRegistry.ensureResumed).toHaveBeenCalledWith('t1');
+    expect(
+      mockResumeRegistry.ensureResumed.mock.invocationCallOrder[0],
+    ).toBeLessThan(mockCodex.request.mock.invocationCallOrder[0]);
+  });
+
+  it('does not start a turn when another app-server owns the writer', async () => {
+    mockResumeRegistry.isResumed.mockReturnValue(false);
+    mockResumeRegistry.ensureResumed.mockRejectedValue(
+      new CodexRpcError({
+        code: -32600,
+        message: 'thread t1 already has an active writer',
+        method: 'thread/resume',
+      }),
+    );
+
+    await expect(
+      service.startTurn({
+        threadId: 't1',
+        input: [{ type: 'text', text: 'hello' }] as never,
+      }),
+    ).rejects.toMatchObject({ errorCode: ErrorCode.threads.activeWriter });
+    expect(mockCodex.request).not.toHaveBeenCalled();
+  });
+
+  it('forks an externally loaded legacy thread at its last completed turn', async () => {
+    mockResumeRegistry.isResumed.mockReturnValue(false);
+    mockCodex.request
+      .mockResolvedValueOnce({
+        thread: { id: 'source', historyMode: 'legacy' },
+      })
+      .mockResolvedValueOnce({
+        thread: {
+          id: 'source',
+          historyMode: 'legacy',
+          turns: [
+            { id: 'done', status: 'completed' },
+            { id: 'partial', status: 'interrupted' },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({ thread: { id: 'fork' }, cwd: '/tmp' });
+
+    await expect(service.forkThread('source')).resolves.toMatchObject({
+      thread: { id: 'fork' },
+    });
+    expect(mockCodex.request).toHaveBeenNthCalledWith(3, 'thread/fork', {
+      threadId: 'source',
+      lastTurnId: 'done',
+    });
   });
 
   it('should call turn/steer', async () => {

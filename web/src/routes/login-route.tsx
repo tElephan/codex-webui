@@ -4,32 +4,39 @@
  */
 import { useCallback } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { LoginPage } from '@/components/login';
+import { LoginPage, type LoginResult } from '@/components/login';
 import { SnackbarContainer } from '@/components/snackbar/snackbar-container';
 import { authLogin, filesGetRoots } from '@/generated/api';
 import { setApiToken, clearApiToken } from '@/auth-token';
 import { resetSocket } from '@/socket';
+import { getApiErrorMessage } from '@/lib/api-error';
 
 export function LoginRoute() {
   const navigate = useNavigate();
   const { redirect } = useSearch({ from: '/login' });
 
-  const handleLogin = useCallback(async (apiKey: string): Promise<boolean> => {
-    try {
-      const { data: loginData } = await authLogin({
-        body: { apiKey },
-        throwOnError: true,
-      });
-      setApiToken(loginData.accessToken);
-      await filesGetRoots({ throwOnError: true });
-      resetSocket();
-      void navigate({ to: redirect });
-      return true;
-    } catch {
-      clearApiToken();
-      return false;
-    }
-  }, [navigate, redirect]);
+  const handleLogin = useCallback(
+    async (apiKey: string): Promise<LoginResult> => {
+      try {
+        const { data: loginData } = await authLogin({
+          body: { apiKey },
+          throwOnError: true,
+        });
+        setApiToken(loginData.accessToken);
+        await filesGetRoots({ throwOnError: true });
+        resetSocket();
+        void navigate({ to: redirect });
+        return { ok: true };
+      } catch (error) {
+        clearApiToken();
+        return {
+          ok: false,
+          error: getApiErrorMessage(error, 'Invalid API key'),
+        };
+      }
+    },
+    [navigate, redirect],
+  );
 
   return (
     <>

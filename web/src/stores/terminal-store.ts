@@ -30,6 +30,7 @@ interface TerminalState {
   contexts: Record<string, TerminalContextState>;
   terminals: Record<string, TerminalMetadata>;
   configLoaded: boolean;
+  hydrated: boolean;
 
   fetchConfig: () => Promise<TerminalConfig>;
   refreshConfig: () => Promise<TerminalConfig>;
@@ -58,6 +59,7 @@ interface TerminalState {
   upsertTerminal: (terminal: TerminalMetadata) => void;
   markTerminalClosed: (contextKey: string, terminalId: string) => void;
   markTerminalExpired: (terminalId: string, error?: string) => void;
+  setHydrated: (hydrated: boolean) => void;
 }
 
 function emptyContext(): TerminalContextState {
@@ -101,6 +103,7 @@ export const useTerminalStore = create<TerminalState>()(
       contexts: {},
       terminals: {},
       configLoaded: false,
+      hydrated: false,
 
       fetchConfig: async () => {
         if (get().configLoaded) return get().config;
@@ -206,7 +209,15 @@ export const useTerminalStore = create<TerminalState>()(
       },
 
       closeTerminal: async (contextKey, terminalId) => {
+        if (get().terminals[terminalId]?.status === 'expired') {
+          get().markTerminalClosed(contextKey, terminalId);
+          return true;
+        }
         const response = await emitAck('terminal.close', { contextKey, terminalId });
+        if (!response.ok && response.error === 'Terminal not found') {
+          get().markTerminalClosed(contextKey, terminalId);
+          return true;
+        }
         if (!response.ok) {
           showSnackbar(response.error ?? i18n.t('Failed to close terminal'), 'error');
           return false;
@@ -314,6 +325,8 @@ export const useTerminalStore = create<TerminalState>()(
           };
         });
       },
+
+      setHydrated: (hydrated) => set({ hydrated }),
     }),
     {
       name: STORAGE_KEY,
@@ -324,6 +337,9 @@ export const useTerminalStore = create<TerminalState>()(
         config: state.config,
         configLoaded: state.configLoaded,
       }),
+      onRehydrateStorage: () => (state) => {
+        state?.setHydrated(true);
+      },
     },
   ),
 );

@@ -193,7 +193,7 @@ export const SETTINGS_DEFINITIONS = [
     type: 'string',
     category: 'security',
     description:
-      'Comma-separated list of allowed workspace root directories. Home directory is always included.',
+      'Comma-separated list of allowed workspace root directories. Home is used only when this setting is empty.',
     defaultValue: '',
     envKey: 'WORKSPACE_ROOTS',
   },

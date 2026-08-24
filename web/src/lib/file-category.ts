@@ -24,7 +24,7 @@ const FONT_EXTENSIONS = new Set(['ttf', 'otf', 'woff', 'woff2']);
 const ARCHIVE_EXTENSIONS = new Set(['zip', 'tar', 'tgz', 'tbz2', 'txz', 'rar', '7z']);
 const ARCHIVE_COMPOUND_EXTENSIONS = new Set(['tar.gz', 'tar.bz2', 'tar.xz']);
 const CODE_EXTENSIONS = new Set([
-  'txt', 'md', 'mdx', 'json', 'jsonc', 'yaml', 'yml', 'toml', 'ini', 'env',
+  'txt', 'md', 'markdown', 'mdx', 'json', 'jsonc', 'yaml', 'yml', 'toml', 'ini', 'env',
   'ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'css', 'scss', 'sass', 'less',
   'html', 'htm', 'xml', 'svg', 'py', 'rs', 'go', 'java', 'kt', 'kts', 'c',
   'h', 'cpp', 'hpp', 'cs', 'php', 'rb', 'swift', 'sql', 'sh', 'bash', 'zsh',

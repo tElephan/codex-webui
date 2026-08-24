@@ -102,6 +102,19 @@ export class BusinessException extends HttpException {
     );
   }
 
+  static tooManyRequests(
+    errorCode: ErrorCodeValue,
+    message?: string,
+    params?: ErrorParams,
+  ): BusinessException {
+    return new BusinessException(
+      errorCode,
+      HttpStatus.TOO_MANY_REQUESTS,
+      message,
+      params,
+    );
+  }
+
   static internal(
     errorCode: ErrorCodeValue,
     message?: string,

@@ -2,11 +2,12 @@
  * Code/text viewer using Monaco Editor.
  * Uses TanStack Query for file content, Zustand for mtime conflict detection.
  */
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import Editor, { type OnMount } from '@monaco-editor/react';
-import { Loader2, Save } from 'lucide-react';
-import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+import { Code2, Eye, FileWarning, Loader2, RefreshCw, Save } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { MarkdownRenderer } from '@/components/chat/markdown-renderer';
 import { Button } from '@/components/ui/button';
 import {
   filesReadFileOptions,
@@ -25,10 +26,14 @@ export function CodeViewer({ filePath }: Props) {
   const setFileMtime = useFilesStore((s) => s.setFileMtime);
   const queryClient = useQueryClient();
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
+  const markdown = isMarkdownFile(filePath);
+  const [viewMode, setViewMode] = useState<'preview' | 'source'>(
+    markdown ? 'preview' : 'source',
+  );
+  const [draft, setDraft] = useState<string | null>(null);
 
-  const { data: fileData, isLoading } = useQuery({
+  const { data: fileData, isError, isLoading, refetch } = useQuery({
     ...filesReadFileOptions({ query: { path: filePath } }),
-    placeholderData: keepPreviousData,
   });
 
   const writeFile = useMutation({
@@ -46,7 +51,7 @@ export function CodeViewer({ filePath }: Props) {
   };
 
   const handleSave = useCallback(() => {
-    const value = editorRef.current?.getValue();
+    const value = draft ?? editorRef.current?.getValue();
     if (value !== undefined) {
       writeFile.mutate({
         body: {
@@ -56,7 +61,7 @@ export function CodeViewer({ filePath }: Props) {
         },
       });
     }
-  }, [filePath, fileMtime, writeFile]);
+  }, [draft, filePath, fileMtime, writeFile]);
 
   if (isLoading) {
     return (
@@ -67,45 +72,111 @@ export function CodeViewer({ filePath }: Props) {
     );
   }
 
+  if (isError) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center text-sm text-muted-foreground">
+        <div className="flex items-center gap-2">
+          <FileWarning className="h-5 w-5 opacity-60" />
+          {t('Failed to load file')}
+        </div>
+        <Button size="sm" variant="outline" onClick={() => void refetch()}>
+          <RefreshCw className="h-3.5 w-3.5" />
+          {t('Retry')}
+        </Button>
+      </div>
+    );
+  }
+
   const fileName = filePath.split('/').pop() ?? filePath;
   const language = guessLanguage(fileName);
+  const content = draft ?? fileData?.content ?? '';
+  const slash = filePath.lastIndexOf('/');
+  const fileDirectory = slash > 0 ? filePath.slice(0, slash) : '/';
 
   return (
     <div className="flex h-full flex-col">
-      {/* Save toolbar */}
-      <div className="flex shrink-0 items-center justify-end border-b border-border px-2 py-1">
-        <Button
-          size="icon"
-          variant="ghost"
-          className="h-6 w-6"
-          onClick={handleSave}
-          title={t('Save (Ctrl+S)')}
-        >
-          <Save className="h-3.5 w-3.5" />
-        </Button>
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-2 py-1">
+        {markdown ? (
+          <div
+            role="group"
+            aria-label={t('Markdown view')}
+            className="flex h-6 items-center rounded-md bg-muted p-0.5"
+          >
+            <button
+              type="button"
+              aria-pressed={viewMode === 'preview'}
+              onClick={() => setViewMode('preview')}
+              className="inline-flex h-5 items-center gap-1 rounded px-1.5 text-xs text-muted-foreground transition-colors aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-sm"
+              title={t('Preview')}
+            >
+              <Eye className="h-3 w-3" />
+              {t('Preview')}
+            </button>
+            <button
+              type="button"
+              aria-pressed={viewMode === 'source'}
+              onClick={() => setViewMode('source')}
+              className="inline-flex h-5 items-center gap-1 rounded px-1.5 text-xs text-muted-foreground transition-colors aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-sm"
+              title={t('Source')}
+            >
+              <Code2 className="h-3 w-3" />
+              {t('Source')}
+            </button>
+          </div>
+        ) : <span />}
+
+        {viewMode === 'source' && (
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-6 w-6"
+            onClick={handleSave}
+            title={t('Save (Ctrl+S)')}
+          >
+            <Save className="h-3.5 w-3.5" />
+          </Button>
+        )}
       </div>
 
       <div className="relative min-h-0 flex-1">
-        <Editor
-          path={filePath}
-          value={fileData?.content ?? ''}
-          language={language}
-          theme="vs-dark"
-          height="100%"
-          onMount={handleMount}
-          options={{
-            readOnly: false,
-            minimap: { enabled: false },
-            fontSize: 13,
-            lineNumbers: 'on',
-            scrollBeyondLastLine: false,
-            wordWrap: 'on',
-            padding: { top: 8 },
-          }}
-        />
+        {viewMode === 'preview' ? (
+          <div className="h-full overflow-auto px-4 pb-8 pt-3 sm:px-6 sm:pb-10 sm:pt-5">
+            <div className="mx-auto max-w-4xl">
+              <MarkdownRenderer
+                content={content}
+                completed
+                localLinkBase={fileDirectory}
+                allowBareRelativeLinks
+              />
+            </div>
+          </div>
+        ) : (
+          <Editor
+            path={filePath}
+            value={content}
+            language={language}
+            theme="vs-dark"
+            height="100%"
+            onMount={handleMount}
+            onChange={(value) => setDraft(value ?? '')}
+            options={{
+              readOnly: false,
+              minimap: { enabled: false },
+              fontSize: 13,
+              lineNumbers: 'on',
+              scrollBeyondLastLine: false,
+              wordWrap: 'on',
+              padding: { top: 8 },
+            }}
+          />
+        )}
       </div>
     </div>
   );
+}
+
+function isMarkdownFile(filePath: string): boolean {
+  return /\.(?:md|markdown|mdx)$/i.test(filePath);
 }
 
 /** Maps file extension to Monaco language identifier. */
@@ -118,6 +189,8 @@ function guessLanguage(fileName: string): string {
     jsx: 'javascript',
     json: 'json',
     md: 'markdown',
+    markdown: 'markdown',
+    mdx: 'markdown',
     css: 'css',
     scss: 'scss',
     html: 'html',

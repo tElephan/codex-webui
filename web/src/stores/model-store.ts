@@ -3,6 +3,7 @@
  * These are applied per-turn via turn/start params.
  */
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 
 type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -17,11 +18,22 @@ interface ModelState {
   clearOverrides: () => void;
 }
 
-export const useModelStore = create<ModelState>((set) => ({
-  modelOverride: null,
-  effortOverride: null,
+export const useModelStore = create<ModelState>()(
+  persist(
+    (set) => ({
+      modelOverride: null,
+      effortOverride: null,
 
-  setModelOverride: (model) => set({ modelOverride: model }),
-  setEffortOverride: (effort) => set({ effortOverride: effort }),
-  clearOverrides: () => set({ modelOverride: null, effortOverride: null }),
-}));
+      setModelOverride: (model) => set({ modelOverride: model }),
+      setEffortOverride: (effort) => set({ effortOverride: effort }),
+      clearOverrides: () => set({ modelOverride: null, effortOverride: null }),
+    }),
+    {
+      name: 'codex.webui.model-selection',
+      partialize: (state) => ({
+        modelOverride: state.modelOverride,
+        effortOverride: state.effortOverride,
+      }),
+    },
+  ),
+);

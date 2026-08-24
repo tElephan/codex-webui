@@ -40,6 +40,7 @@ const STATUS_FALLBACK_CODES: Partial<Record<number, ErrorCodeValue>> = {
   404: ErrorCode.http.notFound,
   409: ErrorCode.http.conflict,
   413: ErrorCode.http.payloadTooLarge,
+  429: ErrorCode.auth.rateLimited,
   500: ErrorCode.http.internalError,
 };
 

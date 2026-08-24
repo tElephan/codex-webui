@@ -24,6 +24,10 @@ body {
   padding-right: env(safe-area-inset-right);
 }
 
+#root:has([data-utility-window]) [data-app-sidebar] {
+  visibility: hidden;
+}
+
 @theme inline {
   --font-heading: var(--font-sans);
   --font-sans: 'Geist Variable', sans-serif;
@@ -281,4 +285,3 @@ body {
 .glass-gpu {
   will-change: backdrop-filter, transform, opacity;
 }
-

@@ -5,9 +5,16 @@
 import { create } from 'zustand';
 import { getSocket } from '../socket';
 import type { TimelineEntry, TurnItem, TurnPlanState } from '../types/timeline';
-import type { ApprovalRequest, ResolvableApprovalDecision, UserInputRequest } from '../types/approval';
+import type {
+  ApprovalRequest,
+  ResolvableApprovalDecision,
+  UserInputRequest,
+} from '../types/approval';
 import type { ThreadDto, TurnDto, FileUpdateChangeDto } from '../generated/api';
-import type { ThreadTokenUsage, ThreadStatusType } from '../types/codex-notifications';
+import type {
+  ThreadTokenUsage,
+  ThreadStatusType,
+} from '../types/codex-notifications';
 
 const DEFAULT_MAX_IDLE_SUBSCRIPTIONS = 30;
 const MIN_MAX_IDLE_SUBSCRIPTIONS = 5;
@@ -23,7 +30,7 @@ function normalizeMaxIdleSubscriptions(limit: number): number {
   );
 }
 
-export type ThreadMode = 'live' | 'readOnly';
+export type ThreadMode = 'live' | 'readOnly' | 'writerConflict';
 
 export interface ThreadRuntimeState {
   threadId: string;
@@ -55,7 +62,6 @@ interface ThreadRuntimeInput {
   mode?: ThreadMode;
 }
 
-
 /** Converts a persisted turn item to a TurnItem for rendering. */
 function parseTurnItem(item: Record<string, unknown>): TurnItem | null {
   const type = item.type as string;
@@ -82,7 +88,9 @@ function parseTurnItem(item: Record<string, unknown>): TurnItem | null {
       return {
         type: 'mcpToolCall',
         itemId: id,
-        content: item.result ? JSON.stringify(item.result, null, 2).slice(0, 500) : '',
+        content: item.result
+          ? JSON.stringify(item.result, null, 2).slice(0, 500)
+          : '',
         completed: true,
         toolServer: (item.server as string) ?? '',
         toolName: (item.tool as string) ?? '',
@@ -92,7 +100,8 @@ function parseTurnItem(item: Record<string, unknown>): TurnItem | null {
       return {
         type: 'commandExecution',
         itemId: id,
-        content: (item.aggregatedOutput as string) ?? (item.text as string) ?? '',
+        content:
+          (item.aggregatedOutput as string) ?? (item.text as string) ?? '',
         completed: true,
         command: item.command as string | undefined,
         exitCode: item.exitCode as number | undefined,
@@ -114,16 +123,16 @@ function parseTurnItem(item: Record<string, unknown>): TurnItem | null {
 }
 
 /** Extracts persisted plan text into a plan panel fallback. */
-function parsePersistedPlan(items: Array<Record<string, unknown>>): TurnPlanState | undefined {
+function parsePersistedPlan(
+  items: Array<Record<string, unknown>>,
+): TurnPlanState | undefined {
   const planText = items
     .filter((item) => item.type === 'plan')
     .map((item) => (typeof item.text === 'string' ? item.text.trim() : ''))
     .filter(Boolean)
     .join('\n\n');
 
-  return planText
-    ? { explanation: planText, steps: [] }
-    : undefined;
+  return planText ? { explanation: planText, steps: [] } : undefined;
 }
 
 /** Converts persisted turns into timeline entries. */
@@ -135,8 +144,12 @@ function turnsToTimeline(turns: TurnDto[]): TimelineEntry[] {
 
     const userMsg = items.find((it) => it.type === 'userMessage');
     if (userMsg) {
-      const content = userMsg.content as Array<{ type: string; text?: string; path?: string; url?: string }> | undefined;
-      const textParts = content?.filter((c) => c.type === 'text').map((c) => c.text ?? '') ?? [];
+      const content = userMsg.content as
+        | Array<{ type: string; text?: string; path?: string; url?: string }>
+        | undefined;
+      const textParts =
+        content?.filter((c) => c.type === 'text').map((c) => c.text ?? '') ??
+        [];
       const text = textParts.join('\n') || ((userMsg.text as string) ?? '');
       const images: string[] = [];
       for (const block of content ?? []) {
@@ -213,12 +226,17 @@ function runtimeFromSelected(state: TimelineState): ThreadRuntimeState | null {
   };
 }
 
-function readRuntime(state: TimelineState, threadId: string): ThreadRuntimeState | null {
+function readRuntime(
+  state: TimelineState,
+  threadId: string,
+): ThreadRuntimeState | null {
   if (state.threadId === threadId) return runtimeFromSelected(state);
   return state.threadsById[threadId] ?? null;
 }
 
-function selectedFields(runtime: ThreadRuntimeState | null): Partial<TimelineState> {
+function selectedFields(
+  runtime: ThreadRuntimeState | null,
+): Partial<TimelineState> {
   if (!runtime) {
     return {
       threadId: null,
@@ -257,7 +275,9 @@ function selectedFields(runtime: ThreadRuntimeState | null): Partial<TimelineSta
   };
 }
 
-function persistSelectedRuntime(state: TimelineState): Record<string, ThreadRuntimeState> {
+function persistSelectedRuntime(
+  state: TimelineState,
+): Record<string, ThreadRuntimeState> {
   const selected = runtimeFromSelected(state);
   if (!selected) return state.threadsById;
   return { ...state.threadsById, [selected.threadId]: selected };
@@ -268,13 +288,17 @@ function hasPendingApproval(runtime: ThreadRuntimeState | null): boolean {
   const flagBlocked =
     runtime.threadStatus?.type === 'active' &&
     runtime.threadStatus.activeFlags.includes('waitingOnApproval');
-  const cardBlocked = Object.values(runtime.approvals).some((approval) => approval.status === 'pending');
+  const cardBlocked = Object.values(runtime.approvals).some(
+    (approval) => approval.status === 'pending',
+  );
   return flagBlocked || cardBlocked;
 }
 
 function hasPendingUserInput(runtime: ThreadRuntimeState | null): boolean {
   if (!runtime) return false;
-  return Object.values(runtime.userInputRequests).some((request) => request.status === 'pending');
+  return Object.values(runtime.userInputRequests).some(
+    (request) => request.status === 'pending',
+  );
 }
 
 function touchRuntime(runtime: ThreadRuntimeState): ThreadRuntimeState {
@@ -287,13 +311,13 @@ function isSafeToCleanupIdleRuntime(
 ): runtime is ThreadRuntimeState {
   return Boolean(
     runtime &&
-      runtime.threadId !== selectedThreadId &&
-      !runtime.loading &&
-      !runtime.activeTurnId &&
-      runtime.pendingResolvedRequestIds.size === 0 &&
-      runtime.threadStatus?.type !== 'active' &&
-      !hasPendingApproval(runtime) &&
-      !hasPendingUserInput(runtime),
+    runtime.threadId !== selectedThreadId &&
+    !runtime.loading &&
+    !runtime.activeTurnId &&
+    runtime.pendingResolvedRequestIds.size === 0 &&
+    runtime.threadStatus?.type !== 'active' &&
+    !hasPendingApproval(runtime) &&
+    !hasPendingUserInput(runtime),
   );
 }
 
@@ -309,8 +333,13 @@ function compareIdleCleanupCandidates(
 }
 
 /** Ensures a turn entry exists in timeline for a given turnId (needed for request-only cards). */
-function ensureTurnEntry(timeline: TimelineEntry[], turnId: string): TimelineEntry[] {
-  if (timeline.some((entry) => entry.kind === 'turn' && entry.turnId === turnId)) {
+function ensureTurnEntry(
+  timeline: TimelineEntry[],
+  turnId: string,
+): TimelineEntry[] {
+  if (
+    timeline.some((entry) => entry.kind === 'turn' && entry.turnId === turnId)
+  ) {
     return timeline;
   }
   return [...timeline, { kind: 'turn', turnId, items: [], completed: false }];
@@ -327,7 +356,9 @@ function bindPendingUserMessage(
   timeline: TimelineEntry[],
   turnId: string,
 ): TimelineEntry[] {
-  if (timeline.some((entry) => entry.kind === 'user' && entry.turnId === turnId)) {
+  if (
+    timeline.some((entry) => entry.kind === 'user' && entry.turnId === turnId)
+  ) {
     return timeline;
   }
   const index = timeline.findLastIndex(
@@ -368,7 +399,11 @@ function updateRuntimeCurrentTurn(
     if (entry.kind !== 'turn') return runtime;
     const result = updater(entry.items, entry.completed);
     const timeline = [...runtime.timeline];
-    timeline[idx] = { ...entry, items: result.items, completed: result.completed };
+    timeline[idx] = {
+      ...entry,
+      items: result.items,
+      completed: result.completed,
+    };
     return { ...runtime, timeline };
   }
 
@@ -399,9 +434,15 @@ function updateRuntimeTurnItem(
   });
 }
 
-function updateRuntimeDiff(runtime: ThreadRuntimeState, turnId: string, diff: string): ThreadRuntimeState {
+function updateRuntimeDiff(
+  runtime: ThreadRuntimeState,
+  turnId: string,
+  diff: string,
+): ThreadRuntimeState {
   const timeline = runtime.timeline.map((entry) =>
-    entry.kind === 'turn' && entry.turnId === turnId ? { ...entry, diff } : entry,
+    entry.kind === 'turn' && entry.turnId === turnId
+      ? { ...entry, diff }
+      : entry,
   );
   return { ...runtime, timeline };
 }
@@ -463,14 +504,24 @@ interface TimelineState {
   isThreadLoading: (threadId: string) => boolean;
   hasPendingApproval: (threadId: string) => boolean;
 
-  setActiveThread: (threadId: string, cwd?: string | null, title?: string | null) => void;
-  setReadOnlyThread: (thread: ThreadDto) => void;
+  setActiveThread: (
+    threadId: string,
+    cwd?: string | null,
+    title?: string | null,
+  ) => void;
+  setReadOnlyThread: (
+    thread: ThreadDto,
+    mode?: Exclude<ThreadMode, 'live'>,
+  ) => void;
   clearThread: () => void;
   hydrateTimeline: (turns: TurnDto[], cwd?: string | null) => void;
   setThreadTitle: (title: string | null) => void;
   addUserMessage: (text: string, images?: string[]) => void;
   addSystemError: (message: string) => void;
-  addSystemMessage: (message: string, severity?: 'info' | 'warning' | 'error') => void;
+  addSystemMessage: (
+    message: string,
+    severity?: 'info' | 'warning' | 'error',
+  ) => void;
 
   toggleReasoning: (itemId: string) => void;
   updateCurrentTurn: (
@@ -493,20 +544,38 @@ interface TimelineState {
   collapseReasoning: (itemId: string) => void;
   addApproval: (approval: ApprovalRequest) => void;
   addUserInputRequest: (request: UserInputRequest) => void;
-  resolveApproval: (itemId: string, decision: ResolvableApprovalDecision) => void;
+  resolveApproval: (
+    itemId: string,
+    decision: ResolvableApprovalDecision,
+  ) => void;
   resolveUserInputRequest: (requestId: string | number) => void;
   setTokenUsage: (turnId: string, usage: ThreadTokenUsage) => void;
   setThreadStatus: (status: ThreadStatusType | null) => void;
   setActiveTurnId: (turnId: string | null) => void;
   clearActiveTurn: () => void;
-  hydrateTokenUsage: (turns: Array<{ turnId: string; usage: ThreadTokenUsage }>) => void;
+  hydrateTokenUsage: (
+    turns: Array<{ turnId: string; usage: ThreadTokenUsage }>,
+  ) => void;
   hydrateTurnDiffs: (turns: Array<{ turnId: string; diff: string }>) => void;
   resolveApprovalByRequestId: (requestId: string | number) => void;
 
-  hydrateTimelineForThread: (threadId: string, turns: TurnDto[], cwd?: string | null) => void;
-  hydrateTokenUsageForThread: (threadId: string, turns: Array<{ turnId: string; usage: ThreadTokenUsage }>) => void;
-  hydrateTurnDiffsForThread: (threadId: string, turns: Array<{ turnId: string; diff: string }>) => void;
-  hydrateTurnErrorsForThread: (threadId: string, errors: Array<{ turnId: string; message: string }>) => void;
+  hydrateTimelineForThread: (
+    threadId: string,
+    turns: TurnDto[],
+    cwd?: string | null,
+  ) => void;
+  hydrateTokenUsageForThread: (
+    threadId: string,
+    turns: Array<{ turnId: string; usage: ThreadTokenUsage }>,
+  ) => void;
+  hydrateTurnDiffsForThread: (
+    threadId: string,
+    turns: Array<{ turnId: string; diff: string }>,
+  ) => void;
+  hydrateTurnErrorsForThread: (
+    threadId: string,
+    errors: Array<{ turnId: string; message: string }>,
+  ) => void;
   updateCurrentTurnForThread: (
     threadId: string,
     turnId: string,
@@ -521,22 +590,60 @@ interface TimelineState {
     itemId: string,
     updater: (existing: TurnItem | undefined) => TurnItem,
   ) => void;
-  updateTurnDiffForThread: (threadId: string, turnId: string, diff: string) => void;
-  updateTurnPlanForThread: (threadId: string, turnId: string, plan: TurnPlanState) => void;
-  appendPlanDeltaForThread: (threadId: string, turnId: string, itemId: string, delta: string) => void;
+  updateTurnDiffForThread: (
+    threadId: string,
+    turnId: string,
+    diff: string,
+  ) => void;
+  updateTurnPlanForThread: (
+    threadId: string,
+    turnId: string,
+    plan: TurnPlanState,
+  ) => void;
+  appendPlanDeltaForThread: (
+    threadId: string,
+    turnId: string,
+    itemId: string,
+    delta: string,
+  ) => void;
   setLoadingForThread: (threadId: string, loading: boolean) => void;
   addApprovalForThread: (threadId: string, approval: ApprovalRequest) => void;
-  addUserInputRequestForThread: (threadId: string, request: UserInputRequest) => void;
-  resolveApprovalForThread: (threadId: string, itemId: string, decision: ResolvableApprovalDecision) => void;
-  resolveUserInputRequestForThread: (threadId: string, requestId: string | number) => void;
-  setTokenUsageForThread: (threadId: string, turnId: string, usage: ThreadTokenUsage) => void;
-  setThreadStatusForThread: (threadId: string, status: ThreadStatusType | null) => void;
+  addUserInputRequestForThread: (
+    threadId: string,
+    request: UserInputRequest,
+  ) => void;
+  resolveApprovalForThread: (
+    threadId: string,
+    itemId: string,
+    decision: ResolvableApprovalDecision,
+  ) => void;
+  resolveUserInputRequestForThread: (
+    threadId: string,
+    requestId: string | number,
+  ) => void;
+  setTokenUsageForThread: (
+    threadId: string,
+    turnId: string,
+    usage: ThreadTokenUsage,
+  ) => void;
+  setThreadStatusForThread: (
+    threadId: string,
+    status: ThreadStatusType | null,
+  ) => void;
   setActiveTurnIdForThread: (threadId: string, turnId: string | null) => void;
   clearActiveTurnForThread: (threadId: string) => void;
-  addSystemMessageForThread: (threadId: string, message: string, severity?: 'info' | 'warning' | 'error', turnId?: string) => void;
+  addSystemMessageForThread: (
+    threadId: string,
+    message: string,
+    severity?: 'info' | 'warning' | 'error',
+    turnId?: string,
+  ) => void;
   addSystemErrorForThread: (threadId: string, message: string) => void;
   setThreadTitleForThread: (threadId: string, title: string | null) => void;
-  resolveApprovalByRequestIdForThread: (threadId: string, requestId: string | number) => void;
+  resolveApprovalByRequestIdForThread: (
+    threadId: string,
+    requestId: string | number,
+  ) => void;
 }
 
 export const useTimelineStore = create<TimelineState>((set, get) => {
@@ -547,9 +654,13 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     set((state) => {
       const base = readRuntime(state, threadId) ?? createRuntime({ threadId });
       const runtime = touchRuntime(updater(base));
-      const threadsById = { ...persistSelectedRuntime(state), [threadId]: runtime };
+      const threadsById = {
+        ...persistSelectedRuntime(state),
+        [threadId]: runtime,
+      };
       const patch: Partial<TimelineState> = { threadsById };
-      if (state.threadId === threadId) Object.assign(patch, selectedFields(runtime));
+      if (state.threadId === threadId)
+        Object.assign(patch, selectedFields(runtime));
       return patch;
     });
   };
@@ -601,7 +712,9 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
             threadsById,
           };
         }
-        const runtime = touchRuntime(threadsById[threadId] ?? createRuntime({ threadId }));
+        const runtime = touchRuntime(
+          threadsById[threadId] ?? createRuntime({ threadId }),
+        );
         return {
           ...selectedFields(runtime),
           selectedThreadId: threadId,
@@ -639,11 +752,15 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       const evictedThreadIds: string[] = [];
 
       set((state) => {
-        const candidates: Array<{ threadId: string; lastActivityAt: number }> = [];
+        const candidates: Array<{ threadId: string; lastActivityAt: number }> =
+          [];
         for (const threadId of state.subscribedThreadIds) {
           const runtime = readRuntime(state, threadId);
           if (isSafeToCleanupIdleRuntime(runtime, state.threadId)) {
-            candidates.push({ threadId, lastActivityAt: runtime.lastActivityAt });
+            candidates.push({
+              threadId,
+              lastActivityAt: runtime.lastActivityAt,
+            });
           }
         }
 
@@ -676,24 +793,44 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     },
 
     getThreadRuntime: (threadId) => readRuntime(get(), threadId),
-    isThreadLoading: (threadId) => readRuntime(get(), threadId)?.loading ?? false,
-    hasPendingApproval: (threadId) => hasPendingApproval(readRuntime(get(), threadId)),
+    isThreadLoading: (threadId) =>
+      readRuntime(get(), threadId)?.loading ?? false,
+    hasPendingApproval: (threadId) =>
+      hasPendingApproval(readRuntime(get(), threadId)),
 
     setActiveThread: (threadId, cwd, title) => {
       get().ensureThreadState({ threadId, cwd, title, mode: 'live' });
       get().selectThread(threadId);
       getSocket().emit('thread.subscribe', { threadId });
-      set((state) => ({ subscribedThreadIds: new Set(state.subscribedThreadIds).add(threadId) }));
+      set((state) => ({
+        subscribedThreadIds: new Set(state.subscribedThreadIds).add(threadId),
+      }));
       get().cleanupIdleThreadSubscriptions();
     },
 
-    setReadOnlyThread: (thread) => {
+    setReadOnlyThread: (thread, mode = 'readOnly') => {
       const title = thread.name ?? thread.preview ?? null;
       get().unsubscribeThread(thread.id);
-      get().ensureThreadState({ threadId: thread.id, cwd: thread.cwd, title, mode: 'readOnly' });
+      get().ensureThreadState({
+        threadId: thread.id,
+        cwd: thread.cwd,
+        title,
+        mode,
+      });
+      applyThreadUpdate(thread.id, (runtime) => ({
+        ...runtime,
+        threadCwd: thread.cwd ?? runtime.threadCwd,
+        threadTitle: title,
+        threadMode: mode,
+        loading: false,
+        activeTurnId: null,
+      }));
       get().selectThread(thread.id);
       get().hydrateTimelineForThread(thread.id, thread.turns ?? [], thread.cwd);
-      get().setThreadStatusForThread(thread.id, thread.status as ThreadStatusType);
+      get().setThreadStatusForThread(
+        thread.id,
+        thread.status as ThreadStatusType,
+      );
     },
 
     clearThread: () => get().selectThread(null),
@@ -715,7 +852,11 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         ...runtime,
         timeline: [
           ...runtime.timeline,
-          { kind: 'user' as const, content: text, ...(images?.length && { images }) },
+          {
+            kind: 'user' as const,
+            content: text,
+            ...(images?.length && { images }),
+          },
         ],
         loading: true,
       }));
@@ -728,7 +869,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
     addSystemMessage: (message, severity = 'info') => {
       const threadId = selectedThread();
-      if (threadId) get().addSystemMessageForThread(threadId, message, severity);
+      if (threadId)
+        get().addSystemMessageForThread(threadId, message, severity);
     },
 
     toggleReasoning: (itemId) => {
@@ -749,7 +891,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
     updateTurnItem: (turnId, itemId, updater) => {
       const threadId = selectedThread();
-      if (threadId) get().updateTurnItemForThread(threadId, turnId, itemId, updater);
+      if (threadId)
+        get().updateTurnItemForThread(threadId, turnId, itemId, updater);
     },
 
     updateTurnDiff: (turnId, diff) => {
@@ -764,7 +907,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
     appendPlanDelta: (turnId, itemId, delta) => {
       const threadId = selectedThread();
-      if (threadId) get().appendPlanDeltaForThread(threadId, turnId, itemId, delta);
+      if (threadId)
+        get().appendPlanDeltaForThread(threadId, turnId, itemId, delta);
     },
 
     setLoading: (loading) => {
@@ -791,7 +935,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       });
     },
 
-    addApproval: (approval) => get().addApprovalForThread(approval.threadId, approval),
+    addApproval: (approval) =>
+      get().addApprovalForThread(approval.threadId, approval),
 
     addUserInputRequest: (request) =>
       get().addUserInputRequestForThread(request.threadId, request),
@@ -838,7 +983,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
     resolveApprovalByRequestId: (requestId) => {
       const threadId = selectedThread();
-      if (threadId) get().resolveApprovalByRequestIdForThread(threadId, requestId);
+      if (threadId)
+        get().resolveApprovalByRequestIdForThread(threadId, requestId);
     },
 
     hydrateTimelineForThread: (threadId, turns, cwd) => {
@@ -883,14 +1029,25 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         // Dedup by turnId + content to avoid skipping same error message from different turns
         const existingErrorKeys = new Set(
           runtime.timeline
-            .filter((e): e is Extract<typeof e, { kind: 'system' }> => e.kind === 'system' && e.severity === 'error')
+            .filter(
+              (e): e is Extract<typeof e, { kind: 'system' }> =>
+                e.kind === 'system' && e.severity === 'error',
+            )
             .map((e) => `${e.turnId ?? ''}:${e.content}`),
         );
-        const pendingByTurn = new Map<string, { kind: 'system'; content: string; severity: 'error'; turnId: string }>();
+        const pendingByTurn = new Map<
+          string,
+          { kind: 'system'; content: string; severity: 'error'; turnId: string }
+        >();
         for (const err of errors) {
           const content = `Error: ${err.message}`;
           if (!existingErrorKeys.has(`${err.turnId}:${content}`)) {
-            pendingByTurn.set(err.turnId, { kind: 'system', content, severity: 'error', turnId: err.turnId });
+            pendingByTurn.set(err.turnId, {
+              kind: 'system',
+              content,
+              severity: 'error',
+              turnId: err.turnId,
+            });
           }
         }
         if (pendingByTurn.size === 0) return runtime;
@@ -916,19 +1073,27 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     },
 
     updateCurrentTurnForThread: (threadId, turnId, updater) => {
-      applyThreadUpdate(threadId, (runtime) => updateRuntimeCurrentTurn(runtime, turnId, updater));
+      applyThreadUpdate(threadId, (runtime) =>
+        updateRuntimeCurrentTurn(runtime, turnId, updater),
+      );
     },
 
     updateTurnItemForThread: (threadId, turnId, itemId, updater) => {
-      applyThreadUpdate(threadId, (runtime) => updateRuntimeTurnItem(runtime, turnId, itemId, updater));
+      applyThreadUpdate(threadId, (runtime) =>
+        updateRuntimeTurnItem(runtime, turnId, itemId, updater),
+      );
     },
 
     updateTurnDiffForThread: (threadId, turnId, diff) => {
-      applyThreadUpdate(threadId, (runtime) => updateRuntimeDiff(runtime, turnId, diff));
+      applyThreadUpdate(threadId, (runtime) =>
+        updateRuntimeDiff(runtime, turnId, diff),
+      );
     },
 
     updateTurnPlanForThread: (threadId, turnId, plan) => {
-      applyThreadUpdate(threadId, (runtime) => updateRuntimePlan(runtime, turnId, plan));
+      applyThreadUpdate(threadId, (runtime) =>
+        updateRuntimePlan(runtime, turnId, plan),
+      );
     },
 
     appendPlanDeltaForThread: (threadId, turnId, itemId, delta) => {
@@ -956,7 +1121,13 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
           ...runtime,
           timeline: [
             ...runtime.timeline,
-            { kind: 'turn' as const, turnId, items: [], completed: false, plan: patchPlan() },
+            {
+              kind: 'turn' as const,
+              turnId,
+              items: [],
+              completed: false,
+              plan: patchPlan(),
+            },
           ],
         };
       });
@@ -969,11 +1140,14 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     addApprovalForThread: (threadId, approval) => {
       applyThreadUpdate(threadId, (runtime) => {
         const requestKey = String(approval.requestId);
-        const alreadyResolved = runtime.pendingResolvedRequestIds.has(requestKey);
+        const alreadyResolved =
+          runtime.pendingResolvedRequestIds.has(requestKey);
         const finalApproval = alreadyResolved
           ? { ...approval, status: 'resolved' as const }
           : approval;
-        const pendingResolvedRequestIds = new Set(runtime.pendingResolvedRequestIds);
+        const pendingResolvedRequestIds = new Set(
+          runtime.pendingResolvedRequestIds,
+        );
         if (alreadyResolved) pendingResolvedRequestIds.delete(requestKey);
         return {
           ...runtime,
@@ -986,16 +1160,22 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     addUserInputRequestForThread: (threadId, request) => {
       applyThreadUpdate(threadId, (runtime) => {
         const requestKey = String(request.requestId);
-        const alreadyResolved = runtime.pendingResolvedRequestIds.has(requestKey);
+        const alreadyResolved =
+          runtime.pendingResolvedRequestIds.has(requestKey);
         const finalRequest: UserInputRequest = alreadyResolved
           ? { ...request, status: 'resolved' }
           : request;
-        const pendingResolvedRequestIds = new Set(runtime.pendingResolvedRequestIds);
+        const pendingResolvedRequestIds = new Set(
+          runtime.pendingResolvedRequestIds,
+        );
         if (alreadyResolved) pendingResolvedRequestIds.delete(requestKey);
         return {
           ...runtime,
           timeline: ensureTurnEntry(runtime.timeline, request.turnId),
-          userInputRequests: { ...runtime.userInputRequests, [requestKey]: finalRequest },
+          userInputRequests: {
+            ...runtime.userInputRequests,
+            [requestKey]: finalRequest,
+          },
           pendingResolvedRequestIds,
         };
       });
@@ -1040,7 +1220,10 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     },
 
     setThreadStatusForThread: (threadId, status) => {
-      applyThreadUpdate(threadId, (runtime) => ({ ...runtime, threadStatus: status }));
+      applyThreadUpdate(threadId, (runtime) => ({
+        ...runtime,
+        threadStatus: status,
+      }));
     },
 
     setActiveTurnIdForThread: (threadId, turnId) => {
@@ -1054,10 +1237,19 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     },
 
     clearActiveTurnForThread: (threadId) => {
-      applyThreadUpdate(threadId, (runtime) => ({ ...runtime, activeTurnId: null, loading: false }));
+      applyThreadUpdate(threadId, (runtime) => ({
+        ...runtime,
+        activeTurnId: null,
+        loading: false,
+      }));
     },
 
-    addSystemMessageForThread: (threadId, message, severity = 'info', turnId?) => {
+    addSystemMessageForThread: (
+      threadId,
+      message,
+      severity = 'info',
+      turnId?,
+    ) => {
       applyThreadUpdate(threadId, (runtime) => ({
         ...runtime,
         timeline: [
@@ -1072,14 +1264,21 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         ...runtime,
         timeline: [
           ...runtime.timeline,
-          { kind: 'system' as const, content: `Error: ${message}`, severity: 'error' as const },
+          {
+            kind: 'system' as const,
+            content: `Error: ${message}`,
+            severity: 'error' as const,
+          },
         ],
         loading: false,
       }));
     },
 
     setThreadTitleForThread: (threadId, title) => {
-      applyThreadUpdate(threadId, (runtime) => ({ ...runtime, threadTitle: title }));
+      applyThreadUpdate(threadId, (runtime) => ({
+        ...runtime,
+        threadTitle: title,
+      }));
     },
 
     resolveApprovalByRequestIdForThread: (threadId, requestId) => {
@@ -1100,7 +1299,10 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
         const userInput = runtime.userInputRequests[requestKey];
         if (userInput) {
-          const resolved: UserInputRequest = { ...userInput, status: 'resolved' };
+          const resolved: UserInputRequest = {
+            ...userInput,
+            status: 'resolved',
+          };
           return {
             ...runtime,
             userInputRequests: {
@@ -1112,7 +1314,9 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
         return {
           ...runtime,
-          pendingResolvedRequestIds: new Set(runtime.pendingResolvedRequestIds).add(requestKey),
+          pendingResolvedRequestIds: new Set(
+            runtime.pendingResolvedRequestIds,
+          ).add(requestKey),
         };
       });
     },
@@ -1120,8 +1324,12 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 });
 
 /** Selects data from the currently visible thread runtime. */
-export function useSelectedThreadState<T>(selector: (runtime: ThreadRuntimeState | null) => T): T {
-  return useTimelineStore((state) => selector(state.threadId ? readRuntime(state, state.threadId) : null));
+export function useSelectedThreadState<T>(
+  selector: (runtime: ThreadRuntimeState | null) => T,
+): T {
+  return useTimelineStore((state) =>
+    selector(state.threadId ? readRuntime(state, state.threadId) : null),
+  );
 }
 
 /** Selects data from a specific thread runtime. */

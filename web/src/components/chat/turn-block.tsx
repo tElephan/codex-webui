@@ -13,44 +13,79 @@ import { CommandItem } from './turn-items/command-item';
 import { FileChangeItem } from './turn-items/file-change-item';
 import { DiffViewer } from './turn-items/diff-viewer';
 import { ToolCallGroup } from './turn-items/tool-call-group';
+import { ActivityGroup } from './turn-items/command-group';
 import { ApprovalItem } from './turn-items/approval-item';
 import { UserInputCard } from './turn-items/user-input-card';
 import { TurnTokenFooter } from './turn-token-footer';
 import { PlanPanel } from './plan-panel';
 import { useTimelineStore } from '@/stores/timeline-store';
 
-/* ── Grouping consecutive mcpToolCall items ── */
+/* ── Grouping consecutive tool and command activity ── */
 
 type GroupedEntry =
   | { kind: 'single'; item: TurnItem }
-  | { kind: 'toolGroup'; items: TurnItem[] };
+  | { kind: 'toolGroup'; items: TurnItem[] }
+  | { kind: 'activityGroup'; items: TurnItem[] };
 
-/** Groups consecutive mcpToolCall items so they can be rendered in a collapsible block. */
-function groupConsecutiveToolCalls(items: TurnItem[]): GroupedEntry[] {
+type GroupableItemType = 'tool' | 'activity';
+
+/** Groups each uninterrupted command/file-change run into one collapsible block. */
+function groupConsecutiveActivity(items: TurnItem[]): GroupedEntry[] {
   const result: GroupedEntry[] = [];
   let buffer: TurnItem[] = [];
+  let bufferType: GroupableItemType | null = null;
 
   const flush = () => {
     if (buffer.length === 0) return;
-    if (buffer.length === 1) {
+    if (bufferType === 'activity') {
+      result.push({ kind: 'activityGroup', items: buffer });
+    } else if (buffer.length === 1) {
       result.push({ kind: 'single', item: buffer[0] });
     } else {
       result.push({ kind: 'toolGroup', items: buffer });
     }
     buffer = [];
+    bufferType = null;
   };
 
   for (const item of items) {
-    if (item.type === 'mcpToolCall') {
+    const itemType: GroupableItemType | null =
+      item.type === 'mcpToolCall'
+        ? 'tool'
+        : item.type === 'commandExecution' || item.type === 'fileChange'
+          ? 'activity'
+          : null;
+    if (itemType && (bufferType === null || bufferType === itemType)) {
+      bufferType = itemType;
       buffer.push(item);
     } else {
       flush();
-      result.push({ kind: 'single', item });
+      if (itemType) {
+        bufferType = itemType;
+        buffer.push(item);
+      } else {
+        result.push({ kind: 'single', item });
+      }
     }
   }
   flush();
 
-  return result;
+  return result.reduce<GroupedEntry[]>((merged, entry) => {
+    const previous = merged.at(-1);
+    if (previous?.kind === 'activityGroup' && entry.kind === 'activityGroup') {
+      previous.items.push(...entry.items);
+    } else {
+      merged.push(entry);
+    }
+    return merged;
+  }, []);
+}
+
+/** Empty streamed placeholders take no visual space and must not split activity. */
+function isVisuallyEmptyItem(item: TurnItem): boolean {
+  if (item.type === 'reasoning') return !item.content;
+  if (item.type === 'agentMessage') return item.content.trim().length === 0;
+  return false;
 }
 
 interface Props {
@@ -69,7 +104,10 @@ function ItemWithRequests({ item }: { item: TurnItem }) {
   });
 
   const inputCard = userInputRequest ? (
-    <UserInputCard key={String(userInputRequest.requestId)} request={userInputRequest} />
+    <UserInputCard
+      key={String(userInputRequest.requestId)}
+      request={userInputRequest}
+    />
   ) : null;
 
   switch (item.type) {
@@ -114,11 +152,19 @@ function ItemWithRequests({ item }: { item: TurnItem }) {
 
 export function TurnBlock({ entry }: Props) {
   const { t } = useTranslation();
+  const approvals = useTimelineStore((s) => s.approvals);
   const userInputRequests = useTimelineStore((s) => s.userInputRequests);
   // Render user-input requests whose itemId doesn't match any existing turn item.
   const itemIds = new Set(entry.items.map((item) => item.itemId));
   const unattachedInputs = Object.values(userInputRequests).filter(
     (req) => req.turnId === entry.turnId && !itemIds.has(req.itemId),
+  );
+  const itemsWithInputCards = new Set(
+    Object.values(userInputRequests).map((request) => request.itemId),
+  );
+  const visibleItems = entry.items.filter(
+    (item) =>
+      !isVisuallyEmptyItem(item) || itemsWithInputCards.has(item.itemId),
   );
 
   return (
@@ -130,11 +176,37 @@ export function TurnBlock({ entry }: Props) {
       </Avatar>
 
       <div className="glass-1 min-w-0 flex-1 space-y-2 rounded-2xl px-4 py-3">
-        {entry.plan && <PlanPanel plan={entry.plan} completed={entry.completed} />}
+        {entry.plan && (
+          <PlanPanel plan={entry.plan} completed={entry.completed} />
+        )}
 
-        {groupConsecutiveToolCalls(entry.items).map((group) => {
+        {groupConsecutiveActivity(visibleItems).map((group) => {
           if (group.kind === 'single') {
-            return <ItemWithRequests key={group.item.itemId} item={group.item} />;
+            return (
+              <ItemWithRequests key={group.item.itemId} item={group.item} />
+            );
+          }
+          if (group.kind === 'activityGroup') {
+            const hasPendingRequest = group.items.some(
+              (item) =>
+                approvals[item.itemId]?.status === 'pending' ||
+                Object.values(userInputRequests).some(
+                  (request) =>
+                    request.itemId === item.itemId &&
+                    request.status === 'pending',
+                ),
+            );
+            return (
+              <ActivityGroup
+                key={group.items[0].itemId}
+                items={group.items}
+                hasPendingRequest={hasPendingRequest}
+              >
+                {group.items.map((item) => (
+                  <ItemWithRequests key={item.itemId} item={item} />
+                ))}
+              </ActivityGroup>
+            );
           }
           return (
             <ToolCallGroup key={group.items[0].itemId} items={group.items}>
@@ -153,7 +225,7 @@ export function TurnBlock({ entry }: Props) {
 
         {entry.completed && <TurnTokenFooter turnId={entry.turnId} />}
 
-        {!entry.completed && entry.items.length === 0 && !entry.plan && (
+        {!entry.completed && visibleItems.length === 0 && !entry.plan && (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
             {t('Thinking...')}

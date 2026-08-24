@@ -389,6 +389,7 @@ describe('FilesService', () => {
     it('should return configured roots', () => {
       const roots = service.getWorkspaceRoots();
       expect(roots).toContain(tmpDir);
+      expect(roots).not.toContain(os.homedir());
     });
   });
 

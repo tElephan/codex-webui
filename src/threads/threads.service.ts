@@ -17,7 +17,7 @@ import {
   type CreateMessageBranchResult,
 } from './threads-branching.service';
 import { ThreadResumeRegistryService } from './thread-resume-registry.service';
-import { isNotMaterializedError } from './thread-errors';
+import { isActiveWriterError, isNotMaterializedError } from './thread-errors';
 import { previewFromUserInput } from './thread-input-preview';
 
 const REQUIRED_HISTORY_MODE = 'paginated';
@@ -140,7 +140,7 @@ export class ThreadsService {
    * @returns The resumed or already-active thread with resolved settings
    */
   async resumeThread(threadId: string): Promise<v2.ThreadResumeResponse> {
-    return this.resumeRegistry.ensureResumed(threadId);
+    return this.ensureWritableThread(threadId);
   }
 
   /**
@@ -150,6 +150,9 @@ export class ThreadsService {
    * @returns The created turn
    */
   async startTurn(params: v2.TurnStartParams): Promise<v2.TurnStartResponse> {
+    if (!this.resumeRegistry.isResumed(params.threadId)) {
+      await this.ensureWritableThread(params.threadId);
+    }
     const response = await this.codex.request<v2.TurnStartResponse>(
       'turn/start',
       params,
@@ -160,6 +163,22 @@ export class ThreadsService {
       previewFromUserInput(params.input),
     );
     return response;
+  }
+
+  /** Resumes a thread and turns cross-process writer conflicts into actionable API errors. */
+  private async ensureWritableThread(
+    threadId: string,
+  ): Promise<v2.ThreadResumeResponse> {
+    try {
+      return await this.resumeRegistry.ensureResumed(threadId);
+    } catch (err) {
+      if (!isActiveWriterError(err)) throw err;
+      throw BusinessException.conflict(
+        ErrorCode.threads.activeWriter,
+        'Thread is active in another Codex app-server',
+        { threadId },
+      );
+    }
   }
 
   /**
@@ -263,15 +282,40 @@ export class ThreadsService {
    * @returns The forked thread and resolved settings
    */
   async forkThread(threadId: string): Promise<v2.ThreadForkResponse> {
+    const lastTurnId = await this.findStableExternalForkBoundary(threadId);
     const response = await this.codex.request<v2.ThreadForkResponse>(
       'thread/fork',
       {
         threadId,
+        ...(lastTurnId && { lastTurnId }),
       },
     );
     this.resumeRegistry.markResumed(response.thread.id);
     this.resumeRegistry.cacheResponse(response.thread.id, response);
     return response;
+  }
+
+  /**
+   * Avoids copying a partially persisted legacy turn when another app-server
+   * owns the source. Paginated threads have their own history store, and a
+   * thread already loaded here cannot have a competing external writer.
+   */
+  private async findStableExternalForkBoundary(
+    threadId: string,
+  ): Promise<string | undefined> {
+    if (this.resumeRegistry.isResumed(threadId)) return undefined;
+
+    const summary = await this.readThread(threadId, false);
+    if ((summary.thread as ThreadWithHistoryMode).historyMode !== 'legacy') {
+      return undefined;
+    }
+
+    const full = await this.readThread(threadId, true);
+    const turns = full.thread.turns ?? [];
+    const latest = turns.at(-1);
+    if (!latest || latest.status === 'completed') return undefined;
+
+    return turns.findLast((turn) => turn.status === 'completed')?.id;
   }
 
   /**

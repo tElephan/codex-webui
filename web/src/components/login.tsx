@@ -9,7 +9,12 @@ import { Input } from '@/components/ui/input';
 import { KeyRound, Loader2 } from 'lucide-react';
 
 interface Props {
-  onLogin: (apiKey: string) => Promise<boolean>;
+  onLogin: (apiKey: string) => Promise<LoginResult>;
+}
+
+export interface LoginResult {
+  ok: boolean;
+  error?: string;
 }
 
 export function LoginPage({ onLogin }: Props) {
@@ -27,9 +32,9 @@ export function LoginPage({ onLogin }: Props) {
     setError('');
 
     try {
-      const ok = await onLogin(trimmed);
-      if (!ok) {
-        setError(t('Invalid API key'));
+      const result = await onLogin(trimmed);
+      if (!result.ok) {
+        setError(result.error || t('Invalid API key'));
       }
     } catch {
       setError(t('Failed to connect to server'));
@@ -61,14 +66,14 @@ export function LoginPage({ onLogin }: Props) {
           autoFocus
         />
 
-        {error && (
-          <p className="text-sm text-red-500">{error}</p>
-        )}
+        {error && <p className="text-sm text-red-500">{error}</p>}
 
-        <Button type="submit" className="w-full rounded-xl" disabled={loading || !apiKey.trim()}>
-          {loading ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : null}
+        <Button
+          type="submit"
+          className="w-full rounded-xl"
+          disabled={loading || !apiKey.trim()}
+        >
+          {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
           {t('Login')}
         </Button>
       </form>

@@ -31,6 +31,7 @@ import { TurnDiffModule } from './turn-diff/turn-diff.module';
 import { TurnErrorsModule } from './turn-errors/turn-errors.module';
 
 const isDev = process.env.NODE_ENV !== 'production';
+const logLevel = process.env.LOG_LEVEL ?? (isDev ? 'debug' : 'info');
 
 const rollTarget = {
   target: 'pino-roll',
@@ -72,19 +73,17 @@ const PINO_REDACT = {
     ConfigModule.forRoot({ isGlobal: true }),
     LoggerModule.forRoot({
       pinoHttp: {
-        level: process.env.LOG_LEVEL ?? (isDev ? 'debug' : 'info'),
-        transport: isDev
-          ? {
-              targets: [
-                { ...rollTarget, level: 'trace' },
-                {
-                  target: 'pino/file',
-                  options: { destination: 1 },
-                  level: 'trace',
-                },
-              ],
-            }
-          : rollTarget,
+        level: logLevel,
+        transport: {
+          targets: [
+            { ...rollTarget, level: isDev ? 'trace' : logLevel },
+            {
+              target: 'pino/file',
+              options: { destination: 1 },
+              level: isDev ? 'trace' : logLevel,
+            },
+          ],
+        },
         redact: PINO_REDACT,
         serializers: {
           req(req: { url?: string; [k: string]: unknown }) {

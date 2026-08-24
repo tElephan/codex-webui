@@ -39,7 +39,7 @@ export function FileContentViewer({ filePath, source }: Props) {
 
   switch (category) {
     case 'image':
-      return <ImageViewer filePath={filePath} source={previewSource} />;
+      return <ImageViewer key={filePath} filePath={filePath} source={previewSource} />;
     case 'pdf':
       return <PdfViewer source={previewSource} />;
     case 'video':
@@ -65,7 +65,7 @@ export function FileContentViewer({ filePath, source }: Props) {
     case 'code':
     default:
       return previewSource.kind === 'file' ? (
-        <CodeViewer filePath={filePath} />
+        <CodeViewer key={filePath} filePath={filePath} />
       ) : (
         <ReadOnlyCodeViewer source={previewSource} />
       );
