@@ -10,6 +10,8 @@ type FilesContext = 'none' | 'window' | 'thread';
 interface FilesState {
   /** Current root directory (from thread cwd or home). */
   rootDir: string | null;
+  /** Most recent directory whose listing loaded successfully. */
+  lastValidRootDir: string | null;
   /** Currently selected file path. */
   selectedFile: string | null;
   /** Whether the file panel is visible. */
@@ -22,11 +24,14 @@ interface FilesState {
   activeContext: FilesContext;
   /** File-window state kept while the window is hidden. */
   windowRootDir: string | null;
+  windowLastValidRootDir: string | null;
   windowSelectedFile: string | null;
   windowFileTabs: string[];
   hydrated: boolean;
 
   setRootDir: (dir: string | null) => void;
+  markRootDirValid: (dir: string) => void;
+  restoreLastValidRootDir: (failedDir: string) => void;
   selectFile: (filePath: string | null) => void;
   selectFileForWindow: (filePath: string) => void;
   closeFileForWindow: (filePath: string) => void;
@@ -43,12 +48,14 @@ const STORAGE_KEY = 'codex-webui.files.v1';
 export const useFilesStore = create<FilesState>()(
   persist((set, get) => ({
   rootDir: null,
+  lastValidRootDir: null,
   selectedFile: null,
   panelOpen: false,
   expandedDirs: new Set<string>(),
   fileMtime: null,
   activeContext: 'none',
   windowRootDir: null,
+  windowLastValidRootDir: null,
   windowSelectedFile: null,
   windowFileTabs: [],
   hydrated: false,
@@ -74,6 +81,42 @@ export const useFilesStore = create<FilesState>()(
           windowSelectedFile: next.selectedFile,
         }
       : next);
+  },
+
+  markRootDirValid: (dir: string) => {
+    set((state) => {
+      if (state.rootDir !== dir || state.lastValidRootDir === dir) return state;
+      return state.activeContext === 'window'
+        ? { lastValidRootDir: dir, windowLastValidRootDir: dir }
+        : { lastValidRootDir: dir };
+    });
+  },
+
+  restoreLastValidRootDir: (failedDir: string) => {
+    set((state) => {
+      const fallback = state.lastValidRootDir;
+      if (state.rootDir !== failedDir || !fallback || fallback === failedDir) {
+        return state;
+      }
+      const keepSelectedFile = Boolean(
+        state.selectedFile &&
+        (state.selectedFile === fallback ||
+          state.selectedFile.startsWith(`${fallback}/`)),
+      );
+      const next = {
+        rootDir: fallback,
+        selectedFile: keepSelectedFile ? state.selectedFile : null,
+        expandedDirs: new Set<string>(),
+        fileMtime: keepSelectedFile ? state.fileMtime : null,
+      };
+      return state.activeContext === 'window'
+        ? {
+            ...next,
+            windowRootDir: fallback,
+            windowSelectedFile: next.selectedFile,
+          }
+        : next;
+    });
   },
 
   selectFile: (filePath: string | null) => {
@@ -115,9 +158,13 @@ export const useFilesStore = create<FilesState>()(
   activateContext: (context: FilesContext, defaultRoot = null) => {
     const state = get();
     if (context === 'window') {
+      const lastValidRootDir =
+        state.windowLastValidRootDir ?? defaultRoot;
       set({
         activeContext: context,
         rootDir: state.windowRootDir ?? defaultRoot,
+        lastValidRootDir,
+        windowLastValidRootDir: lastValidRootDir,
         selectedFile: state.windowSelectedFile,
         fileMtime: null,
         expandedDirs: new Set<string>(),
@@ -135,6 +182,7 @@ export const useFilesStore = create<FilesState>()(
       set({
         activeContext: context,
         rootDir: defaultRoot,
+        lastValidRootDir: defaultRoot,
         selectedFile: keepSelectedFile ? selectedFile : null,
         fileMtime: keepSelectedFile ? state.fileMtime : null,
         expandedDirs: new Set<string>(),
@@ -176,6 +224,7 @@ export const useFilesStore = create<FilesState>()(
     // independent global Files window state across a browser refresh instead.
     partialize: (state) => ({
       windowRootDir: state.windowRootDir,
+      windowLastValidRootDir: state.windowLastValidRootDir,
       windowSelectedFile: state.windowSelectedFile,
       windowFileTabs: state.windowFileTabs,
     }),

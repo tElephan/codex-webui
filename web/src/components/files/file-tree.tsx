@@ -3,7 +3,7 @@
  * Click directory → navigate into it. Breadcrumb → go back up.
  * Supports drag-and-drop move via @dnd-kit/react and right-click context menu.
  */
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import {
   ChevronRight,
   File,
@@ -176,10 +176,29 @@ interface FlatDirectoryProps {
 
 function FlatDirectory({ dirPath, selectedFile, onFileClick, onDirClick, openDialog, ops, onUpload }: FlatDirectoryProps) {
   const { t } = useTranslation();
+  const markRootDirValid = useFilesStore((s) => s.markRootDirValid);
+  const restoreLastValidRootDir = useFilesStore(
+    (s) => s.restoreLastValidRootDir,
+  );
 
-  const { data: entries, isLoading } = useQuery({
+  const { data: entries, isLoading, isError, isSuccess } = useQuery({
     ...filesReadTreeOptions({ query: { root: dirPath } }),
+    retry: false,
   });
+
+  useEffect(() => {
+    if (isError) {
+      restoreLastValidRootDir(dirPath);
+    } else if (isSuccess) {
+      markRootDirValid(dirPath);
+    }
+  }, [
+    dirPath,
+    isError,
+    isSuccess,
+    markRootDirValid,
+    restoreLastValidRootDir,
+  ]);
 
   if (isLoading) {
     return (
