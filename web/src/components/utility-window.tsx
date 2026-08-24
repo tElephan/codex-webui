@@ -1,10 +1,20 @@
 import type { ReactNode } from 'react';
-import { FolderOpen, Minimize2, Puzzle, Settings, Terminal } from 'lucide-react';
+import {
+  FolderOpen,
+  Minimize2,
+  Puzzle,
+  Settings,
+  Terminal,
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
-export type UtilityWindowKind = 'files' | 'terminal' | 'settings' | 'integrations';
+export type UtilityWindowKind =
+  | 'files'
+  | 'terminal'
+  | 'settings'
+  | 'integrations';
 
 interface Props {
   kind: UtilityWindowKind;
@@ -30,7 +40,7 @@ export function UtilityWindow({ kind, onHide, children, visible }: Props) {
     <section
       data-utility-window={visible ? kind : undefined}
       className={cn(
-        'fixed inset-0 z-[100] flex flex-col bg-background text-foreground',
+        'fixed inset-0 z-40 flex flex-col bg-background text-foreground',
         !visible && 'hidden',
       )}
       aria-label={t(details.label)}
