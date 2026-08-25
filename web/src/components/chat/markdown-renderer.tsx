@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next';
 import { copyText } from '@/lib/clipboard';
 import { openFileInPanel, parseLocalFileLink } from '@/lib/local-file-link';
 import { cn } from '@/lib/utils';
+import { useThemeStore } from '@/stores/theme-store';
 
 type HighlighterType = Awaited<ReturnType<typeof import('shiki')['createHighlighter']>>;
 
@@ -66,6 +67,7 @@ function CodeBlock({
   completed: boolean;
 }) {
   const { t } = useTranslation();
+  const dark = useThemeStore((state) => state.dark);
   const [html, setHtml] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const lang = className?.replace('language-', '') ?? '';
@@ -82,7 +84,7 @@ function CodeBlock({
         const result = hl.codeToHtml(children, {
           lang,
           themes: { dark: 'github-dark', light: 'github-light' },
-          defaultColor: 'dark',
+          defaultColor: dark ? 'dark' : 'light',
         });
         setHtml(result);
       } catch {
@@ -91,7 +93,7 @@ function CodeBlock({
     });
 
     return () => { cancelled = true; };
-  }, [children, lang, completed]);
+  }, [children, lang, completed, dark]);
 
   const handleCopy = useCallback(async () => {
     try {
@@ -104,7 +106,7 @@ function CodeBlock({
   }, [children, t]);
 
   return (
-    <div className="group relative my-3 overflow-hidden rounded-lg border border-border/50 bg-[#0d1117]">
+    <div className="group relative my-3 overflow-hidden rounded-lg border border-border/50 bg-muted/30 dark:bg-[#0d1117]">
       <div className="flex items-center justify-between border-b border-border/30 px-3 py-1">
         <span className="text-xs text-muted-foreground">{lang || t('Code')}</span>
         <button
