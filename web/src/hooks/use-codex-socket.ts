@@ -7,6 +7,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { getSocket } from '../socket';
 import { useConnectionStore } from '../stores/connection-store';
 import { useTimelineStore } from '../stores/timeline-store';
+import { dispatchNextQueuedTurn } from '../stores/queued-turn-store';
 import { showSnackbar } from '@/stores/snackbar-store';
 import { handleNotification, type NotificationContext } from './notification-handlers';
 import { tokenUsageReadThreadTokenUsage, turnDiffReadThreadTurnDiffs, turnErrorsReadThreadTurnErrors, threadsResumeThread } from '@/generated/api/sdk.gen';
@@ -121,6 +122,10 @@ export function useCodexSocket(enabled = true) {
       params: Record<string, unknown>;
     }) => {
       handleNotification(notification.method, notification.params, ctx);
+      if (notification.method === 'turn/completed') {
+        const threadId = notification.params.threadId as string | undefined;
+        if (threadId) void dispatchNextQueuedTurn(threadId);
+      }
     };
 
     socket.on('codex.notification', handleCodexNotification);
@@ -177,6 +182,7 @@ export function useCodexSocket(enabled = true) {
             const activeTurn = data.thread.turns?.find((t: { status?: string }) => t.status === 'inProgress');
             store.setActiveTurnIdForThread(threadId, activeTurn?.id ?? null);
             store.setLoadingForThread(threadId, Boolean(activeTurn));
+            if (!activeTurn) void dispatchNextQueuedTurn(threadId);
             // Hydrate after timeline is in place to avoid race.
             const [tokenRes, diffRes, errorRes] = await Promise.allSettled([
               tokenUsageReadThreadTokenUsage({ path: { threadId } }),

@@ -9,7 +9,15 @@ import {
   useImperativeHandle,
   useRef,
 } from 'react';
-import { GitFork, Loader2, Send, Square, TerminalSquare } from 'lucide-react';
+import {
+  CornerDownLeft,
+  GitFork,
+  ListPlus,
+  Loader2,
+  Send,
+  Square,
+  TerminalSquare,
+} from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
@@ -26,6 +34,13 @@ import { getApiErrorMessage } from '@/lib/api-error';
 import { useTimelineStore } from '@/stores/timeline-store';
 import { useModelStore } from '@/stores/model-store';
 import { useChatDraftStore } from '@/stores/chat-draft-store';
+import {
+  dispatchNextQueuedTurn,
+  type QueuedTurn,
+  queuedTurnAttachmentCount,
+  useQueuedTurnStore,
+} from '@/stores/queued-turn-store';
+import type { StartTurnDto } from '@/generated/api/types.gen';
 import { useChatAttachments } from '@/hooks/use-chat-attachments';
 import { useChatMention } from '@/hooks/use-chat-mention';
 import { SecurityPolicyBadge } from './security-policy-badge';
@@ -35,6 +50,18 @@ import { McpStatusBadge } from './mcp-status-badge';
 import { SkillSelector } from './skill-selector';
 import { AttachmentChips } from './attachment-chips';
 import { MentionPopover } from './mention-popover';
+import { QueuedTurnList } from './queued-turn-list';
+
+function isNoActiveTurnError(message: string): boolean {
+  return /no active turn to steer|active turn.*(?:mismatch|finished|not found)/i.test(
+    message,
+  );
+}
+
+function followUpLabel(text: string): string {
+  const trimmed = text.trim();
+  return trimmed.length > 160 ? `${trimmed.slice(0, 157)}...` : trimmed;
+}
 
 /** Imperative handle exposed via ref for external input manipulation. */
 export interface ChatInputHandle {
@@ -54,7 +81,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
   ref,
 ) {
   const threadId = useTimelineStore((s) => s.threadId);
-  const value = useChatDraftStore((s) => threadId ? s.drafts[threadId] ?? '' : '');
+  const value = useChatDraftStore((s) =>
+    threadId ? (s.drafts[threadId] ?? '') : '',
+  );
   const setDraft = useChatDraftStore((s) => s.setDraft);
   const setValue = useCallback<React.Dispatch<React.SetStateAction<string>>>(
     (update) => {
@@ -84,11 +113,39 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
   });
   const addUserMessage = useTimelineStore((s) => s.addUserMessage);
   const addSystemError = useTimelineStore((s) => s.addSystemError);
+  const addSystemMessageForThread = useTimelineStore(
+    (s) => s.addSystemMessageForThread,
+  );
+  const addSystemErrorForThread = useTimelineStore(
+    (s) => s.addSystemErrorForThread,
+  );
+  const clearActiveTurnForThread = useTimelineStore(
+    (s) => s.clearActiveTurnForThread,
+  );
+  const enqueueTurn = useQueuedTurnStore((s) => s.enqueue);
+  const removeQueuedTurn = useQueuedTurnStore((s) => s.remove);
+  const markQueuedTurnSending = useQueuedTurnStore((s) => s.markSending);
+  const markQueuedTurnFailed = useQueuedTurnStore((s) => s.markFailed);
+  const nextQueuedTurn = useQueuedTurnStore((s) =>
+    threadId ? s.queues[threadId]?.[0] : undefined,
+  );
   const readOnly = threadMode === 'readOnly';
   const writerConflict = threadMode === 'writerConflict';
   const inputDisabled = readOnly || writerConflict;
   const hasActiveTurn = Boolean(threadId && activeTurnId && !inputDisabled);
   const canSteer = hasActiveTurn && !hasPendingApproval;
+
+  useEffect(() => {
+    if (
+      threadId &&
+      nextQueuedTurn?.status === 'queued' &&
+      !hasActiveTurn &&
+      !loading &&
+      !inputDisabled
+    ) {
+      void dispatchNextQueuedTurn(threadId);
+    }
+  }, [hasActiveTurn, inputDisabled, loading, nextQueuedTurn, threadId]);
 
   // ── Attachment hook ──────────────────────────────────────
   const {
@@ -163,7 +220,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
   });
   const steer = useMutation({
     ...threadsSteerTurnMutation(),
-    onError: (err) => addSystemError(getApiErrorMessage(err)),
   });
   const interruptTurn = useMutation({
     ...threadsInterruptTurnMutation(),
@@ -206,7 +262,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
   ]);
 
   const handleSteer = useCallback(() => {
-    const input = buildInput();
+    const input = buildInput() as StartTurnDto['input'];
     if (
       input.length === 0 ||
       !canSteer ||
@@ -215,12 +271,179 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
       steer.isPending
     )
       return;
-    clearAfterSend();
-    steer.mutate({
-      path: { threadId, turnId: activeTurnId },
-      body: { input: input as never },
+    const targetThreadId = threadId;
+    const submittedValue = valueRef.current;
+    const submittedAttachmentIds = attachmentsRef.current.map(
+      (item) => item.id,
+    );
+    const attachmentCount = input.filter((item) => item.type !== 'text').length;
+    const { modelOverride, effortOverride } = useModelStore.getState();
+
+    const clearIfUnchanged = () => {
+      const currentIds = attachmentsRef.current.map((item) => item.id);
+      if (
+        valueRef.current === submittedValue &&
+        currentIds.length === submittedAttachmentIds.length &&
+        currentIds.every((id, index) => id === submittedAttachmentIds[index])
+      ) {
+        clearAfterSend();
+      }
+    };
+
+    steer.mutate(
+      {
+        path: { threadId: targetThreadId, turnId: activeTurnId },
+        body: { input },
+      },
+      {
+        onSuccess: () => {
+          clearIfUnchanged();
+          const label =
+            followUpLabel(submittedValue) ||
+            t(
+              attachmentCount === 1 ? '1 attachment' : '{{count}} attachments',
+              {
+                count: attachmentCount,
+              },
+            );
+          addSystemMessageForThread(
+            targetThreadId,
+            label
+              ? t('Steered current turn: {{text}}', { text: label })
+              : t('Steered current turn'),
+            'info',
+            activeTurnId,
+          );
+        },
+        onError: (error) => {
+          const message = getApiErrorMessage(error);
+          if (isNoActiveTurnError(message)) {
+            clearActiveTurnForThread(targetThreadId);
+            enqueueTurn({
+              threadId: targetThreadId,
+              input,
+              displayText: submittedValue.trim(),
+              ...(modelOverride && { model: modelOverride }),
+              ...(effortOverride && { effort: effortOverride }),
+            });
+            clearIfUnchanged();
+            addSystemMessageForThread(
+              targetThreadId,
+              t(
+                'The current turn already finished. Sending this as the next turn.',
+              ),
+              'info',
+            );
+            void dispatchNextQueuedTurn(targetThreadId);
+            return;
+          }
+          addSystemErrorForThread(targetThreadId, message);
+        },
+      },
+    );
+  }, [
+    activeTurnId,
+    addSystemErrorForThread,
+    addSystemMessageForThread,
+    attachmentsRef,
+    buildInput,
+    canSteer,
+    clearActiveTurnForThread,
+    clearAfterSend,
+    enqueueTurn,
+    steer,
+    t,
+    threadId,
+    valueRef,
+  ]);
+
+  const handleQueue = useCallback(() => {
+    const input = buildInput() as StartTurnDto['input'];
+    if (input.length === 0 || !threadId || inputDisabled) return;
+    const { modelOverride, effortOverride } = useModelStore.getState();
+    enqueueTurn({
+      threadId,
+      input,
+      displayText: valueRef.current.trim(),
+      ...(modelOverride && { model: modelOverride }),
+      ...(effortOverride && { effort: effortOverride }),
     });
-  }, [buildInput, clearAfterSend, canSteer, threadId, activeTurnId, steer]);
+    clearAfterSend();
+    // Covers the small race where the active turn completed just before enqueue.
+    void dispatchNextQueuedTurn(threadId);
+  }, [
+    buildInput,
+    clearAfterSend,
+    enqueueTurn,
+    inputDisabled,
+    threadId,
+    valueRef,
+  ]);
+
+  const handleSendQueued = useCallback(
+    (item: QueuedTurn) => {
+      if (!threadId || steer.isPending) return;
+      if (!hasActiveTurn) {
+        void dispatchNextQueuedTurn(threadId, item.id);
+        return;
+      }
+      if (!canSteer || !activeTurnId) return;
+
+      markQueuedTurnSending(threadId, item.id);
+      steer.mutate(
+        {
+          path: { threadId, turnId: activeTurnId },
+          body: { input: item.input },
+        },
+        {
+          onSuccess: () => {
+            removeQueuedTurn(threadId, item.id);
+            const attachmentCount = queuedTurnAttachmentCount(item);
+            const label =
+              followUpLabel(item.displayText) ||
+              t(
+                attachmentCount === 1
+                  ? '1 attachment'
+                  : '{{count}} attachments',
+                { count: attachmentCount },
+              );
+            addSystemMessageForThread(
+              threadId,
+              label
+                ? t('Steered current turn: {{text}}', { text: label })
+                : t('Steered current turn'),
+              'info',
+              activeTurnId,
+            );
+          },
+          onError: (error) => {
+            const message = getApiErrorMessage(error);
+            markQueuedTurnFailed(threadId, item.id, message);
+            if (isNoActiveTurnError(message)) {
+              clearActiveTurnForThread(threadId);
+              void dispatchNextQueuedTurn(threadId, item.id);
+              return;
+            }
+            addSystemErrorForThread(threadId, message);
+          },
+        },
+      );
+    },
+    [
+      activeTurnId,
+      addSystemErrorForThread,
+      addSystemMessageForThread,
+      canSteer,
+      clearActiveTurnForThread,
+      hasActiveTurn,
+      markQueuedTurnFailed,
+      markQueuedTurnSending,
+      removeQueuedTurn,
+      steer,
+      t,
+      threadId,
+    ],
+  );
 
   const handleStop = useCallback(() => {
     if (!threadId || !activeTurnId || interruptTurn.isPending) return;
@@ -229,11 +452,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
 
   const handleSubmit = useCallback(() => {
     if (hasActiveTurn) {
-      handleSteer();
+      if (canSteer) handleSteer();
+      else handleQueue();
       return;
     }
     handleSend();
-  }, [hasActiveTurn, handleSteer, handleSend]);
+  }, [canSteer, handleQueue, handleSend, handleSteer, hasActiveTurn]);
 
   // ── Input handlers ───────────────────────────────────────
   const handleChange = useCallback(
@@ -287,6 +511,15 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
           </Button>
         </div>
       )}
+      <QueuedTurnList
+        threadId={threadId}
+        canSendNow={
+          !inputDisabled &&
+          !steer.isPending &&
+          (hasActiveTurn ? canSteer : !loading)
+        }
+        onSendNow={handleSendQueued}
+      />
       <div className="relative">
         <AttachmentChips
           attachments={chipAttachments}
@@ -326,7 +559,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
                   ? t('Thread is active in another Codex client')
                   : t('Archived thread is read-only')
                 : hasActiveTurn
-                  ? t('Add input to the active turn...')
+                  ? t('Steer or queue a follow-up...')
                   : threadId
                     ? t('Type a message... (@ to mention files, paste images)')
                     : t('Create a thread first')
@@ -364,12 +597,24 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
                 <>
                   <Button
                     size="sm"
-                    className="h-7 rounded-lg px-2.5 text-xs transition-transform duration-200 hover:scale-105 active:scale-95"
+                    className="h-7 w-7 rounded-lg px-0 text-xs transition-transform duration-200 hover:scale-105 active:scale-95 sm:w-auto sm:px-2.5"
                     disabled={!hasContent || !canSteer || steer.isPending}
                     onClick={handleSteer}
                     title={t('Steer current turn')}
                   >
-                    {t('Steer')}
+                    <CornerDownLeft className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">{t('Steer')}</span>
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="h-7 w-7 rounded-lg px-0 text-xs transition-transform duration-200 hover:scale-105 active:scale-95 sm:w-auto sm:px-2.5"
+                    disabled={!hasContent}
+                    onClick={handleQueue}
+                    title={t('Queue for next turn')}
+                  >
+                    <ListPlus className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">{t('Queue')}</span>
                   </Button>
                   <Button
                     size="icon"

@@ -18,6 +18,7 @@ import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { useBreakpoint } from '@/hooks/use-breakpoint';
 import { useTimelineStore } from '@/stores/timeline-store';
 import { useFilesStore } from '@/stores/files-store';
+import { dispatchNextQueuedTurn } from '@/stores/queued-turn-store';
 import { showSnackbar } from '@/stores/snackbar-store';
 import {
   threadsForkThreadMutation,
@@ -121,6 +122,7 @@ export function ThreadView() {
         setLoadingForThread(tid, true);
       } else {
         setLoadingForThread(tid, false);
+        void dispatchNextQueuedTurn(tid);
       }
       void tokenUsageReadThreadTokenUsage({ path: { threadId: tid } })
         .then(({ data }) => data && hydrateTokenUsageForThread(tid, data.turns))

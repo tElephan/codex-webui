@@ -607,6 +607,12 @@ interface TimelineState {
     delta: string,
   ) => void;
   setLoadingForThread: (threadId: string, loading: boolean) => void;
+  addUserMessageForThread: (
+    threadId: string,
+    text: string,
+    images?: string[],
+    turnId?: string,
+  ) => void;
   addApprovalForThread: (threadId: string, approval: ApprovalRequest) => void;
   addUserInputRequestForThread: (
     threadId: string,
@@ -847,19 +853,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
     addUserMessage: (text, images) => {
       const threadId = selectedThread();
-      if (!threadId) return;
-      applyThreadUpdate(threadId, (runtime) => ({
-        ...runtime,
-        timeline: [
-          ...runtime.timeline,
-          {
-            kind: 'user' as const,
-            content: text,
-            ...(images?.length && { images }),
-          },
-        ],
-        loading: true,
-      }));
+      if (threadId) get().addUserMessageForThread(threadId, text, images);
     },
 
     addSystemError: (message) => {
@@ -1135,6 +1129,36 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
     setLoadingForThread: (threadId, loading) => {
       applyThreadUpdate(threadId, (runtime) => ({ ...runtime, loading }));
+    },
+
+    addUserMessageForThread: (threadId, text, images, turnId) => {
+      applyThreadUpdate(threadId, (runtime) => {
+        if (
+          turnId &&
+          runtime.timeline.some(
+            (entry) => entry.kind === 'user' && entry.turnId === turnId,
+          )
+        ) {
+          return { ...runtime, loading: true };
+        }
+
+        const entry = {
+          kind: 'user' as const,
+          content: text,
+          ...(images?.length && { images }),
+          ...(turnId && { turnId }),
+        };
+        const timeline = [...runtime.timeline];
+        const turnIndex = turnId
+          ? timeline.findIndex(
+              (candidate) =>
+                candidate.kind === 'turn' && candidate.turnId === turnId,
+            )
+          : -1;
+        if (turnIndex >= 0) timeline.splice(turnIndex, 0, entry);
+        else timeline.push(entry);
+        return { ...runtime, timeline, loading: true };
+      });
     },
 
     addApprovalForThread: (threadId, approval) => {
