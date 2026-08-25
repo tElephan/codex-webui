@@ -8,12 +8,15 @@ import {
   useEffect,
   useImperativeHandle,
   useRef,
+  useState,
 } from 'react';
 import {
+  ChevronUp,
   CornerDownLeft,
   GitFork,
   ListPlus,
   Loader2,
+  MessageSquarePlus,
   Send,
   Square,
   TerminalSquare,
@@ -21,6 +24,11 @@ import {
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import { Textarea } from '@/components/ui/textarea';
 import {
   threadsInterruptTurnMutation,
@@ -92,6 +100,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
     [setDraft, threadId],
   );
   const valueRef = useRef(value);
+  const [followUpMenuOpen, setFollowUpMenuOpen] = useState(false);
   useEffect(() => {
     valueRef.current = value;
   }, [value]);
@@ -595,27 +604,72 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
               <TokenUsageRing />
               {hasActiveTurn ? (
                 <>
-                  <Button
-                    size="sm"
-                    className="h-7 w-7 rounded-lg px-0 text-xs transition-transform duration-200 hover:scale-105 active:scale-95 sm:w-auto sm:px-2.5"
-                    disabled={!hasContent || !canSteer || steer.isPending}
-                    onClick={handleSteer}
-                    title={t('Steer current turn')}
+                  <Popover
+                    open={followUpMenuOpen}
+                    onOpenChange={setFollowUpMenuOpen}
                   >
-                    <CornerDownLeft className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">{t('Steer')}</span>
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    className="h-7 w-7 rounded-lg px-0 text-xs transition-transform duration-200 hover:scale-105 active:scale-95 sm:w-auto sm:px-2.5"
-                    disabled={!hasContent}
-                    onClick={handleQueue}
-                    title={t('Queue for next turn')}
-                  >
-                    <ListPlus className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">{t('Queue')}</span>
-                  </Button>
+                    <PopoverTrigger asChild>
+                      <Button
+                        size="sm"
+                        className="h-7 w-7 rounded-lg px-0 text-xs transition-transform duration-200 hover:scale-105 active:scale-95 sm:w-auto sm:px-2.5"
+                        disabled={!hasContent || steer.isPending}
+                        title={t('Follow up')}
+                      >
+                        <MessageSquarePlus className="h-3.5 w-3.5" />
+                        <span className="hidden sm:inline">
+                          {t('Follow up')}
+                        </span>
+                        <ChevronUp className="hidden h-3 w-3 sm:block" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      align="end"
+                      side="top"
+                      sideOffset={8}
+                      className="w-64 rounded-lg p-1.5"
+                    >
+                      <p className="px-2 py-1 text-xs font-medium text-muted-foreground">
+                        {t('Choose follow-up action')}
+                      </p>
+                      <button
+                        type="button"
+                        className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left outline-none transition-colors hover:bg-accent focus-visible:bg-accent disabled:pointer-events-none disabled:opacity-50"
+                        disabled={!canSteer}
+                        onClick={() => {
+                          setFollowUpMenuOpen(false);
+                          handleSteer();
+                        }}
+                      >
+                        <CornerDownLeft className="mt-0.5 h-4 w-4 shrink-0" />
+                        <span className="min-w-0">
+                          <span className="block text-sm font-medium">
+                            {t('Steer current turn')}
+                          </span>
+                          <span className="block text-xs text-muted-foreground">
+                            {t('Changes the active response immediately')}
+                          </span>
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left outline-none transition-colors hover:bg-accent focus-visible:bg-accent"
+                        onClick={() => {
+                          setFollowUpMenuOpen(false);
+                          handleQueue();
+                        }}
+                      >
+                        <ListPlus className="mt-0.5 h-4 w-4 shrink-0" />
+                        <span className="min-w-0">
+                          <span className="block text-sm font-medium">
+                            {t('Queue for next turn')}
+                          </span>
+                          <span className="block text-xs text-muted-foreground">
+                            {t('Starts automatically after the current turn')}
+                          </span>
+                        </span>
+                      </button>
+                    </PopoverContent>
+                  </Popover>
                   <Button
                     size="icon"
                     variant="destructive"
