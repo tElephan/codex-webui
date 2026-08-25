@@ -490,6 +490,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
 
   const hasContent = value.trim().length > 0 || attachments.length > 0;
 
+  useEffect(() => {
+    if (!hasActiveTurn || !hasContent) setFollowUpMenuOpen(false);
+  }, [hasActiveTurn, hasContent]);
+
   // ── Render ───────────────────────────────────────────────
   return (
     <footer className="glass-4 sticky bottom-0 z-10 px-3 py-2.5 sm:px-4 sm:py-3 lg:px-6">
