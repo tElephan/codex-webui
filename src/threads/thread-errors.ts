@@ -17,9 +17,6 @@ import {
 
 /** JSON-RPC "Invalid Request"; app-server's catch-all for rejected calls. */
 const INVALID_REQUEST = -32600;
-/** JSON-RPC "Method not found"; used for empty paginated turn history. */
-const METHOD_NOT_FOUND = -32601;
-
 /** Flattens message and structured data into one string for matching. */
 function errorText(err: unknown): string {
   if (!isCodexRpcError(err)) {
@@ -36,18 +33,26 @@ function isInvalidRequest(err: unknown): boolean {
 }
 
 /**
- * Returns true when the RPC error indicates a thread hasn't been materialized yet.
+ * Returns true when a thread has no turns to read yet.
  *
- * Deliberately not gated on the error code: this predicate guards resume/read
- * fallbacks that predate structured errors, and narrowing it would turn a
- * recoverable state into a hard failure if app-server changed the code.
+ * The two history modes report this same state differently, and neither the
+ * wording nor the code overlaps — measured against 0.149.1 on a thread created
+ * but never sent to:
+ *
+ * - legacy:    `-32600 ... is not materialized yet; includeTurns is
+ *              unavailable before first user message`
+ * - paginated: `-32601 list_turns is not supported yet` — it names the
+ *              unimplemented backing call rather than the state
+ *
+ * Deliberately not gated on the error code: the codes differ per mode (-32600
+ * vs -32601), and this predicate guards resume/read fallbacks where treating a
+ * recoverable state as fatal breaks thread creation outright.
  */
 export function isNotMaterializedError(err: unknown): boolean {
-  if (/\bnot materialized\b/i.test(errorText(err))) return true;
+  const text = errorText(err);
   return (
-    isCodexRpcError(err) &&
-    err.code === METHOD_NOT_FOUND &&
-    /\blist_turns is not supported yet\b/i.test(errorText(err))
+    /\bnot materialized\b/i.test(text) ||
+    /\blist_turns is not supported\b/i.test(text)
   );
 }
 
@@ -110,4 +115,25 @@ export function isDescendantRejectedError(err: unknown): boolean {
   return /\b(fork(ed|s)?|descendants?|child(ren)?|referenc\w*)\b/i.test(
     errorText(err),
   );
+}
+
+/**
+ * Returns true when app-server has no rollout backing a thread id.
+ *
+ * Deliberately matched against one exact phrase. Measured on 0.149.0 against a
+ * thread id that never existed:
+ *
+ * - `thread/delete`  → `-32600 no rollout found for thread id <id>`
+ * - `thread/archive` → `-32600 no rollout found for thread id <id>`
+ * - `thread/read`    → `-32600 thread not loaded: <id>`
+ *
+ * `thread/read`'s wording is intentionally *not* accepted: "not loaded" also
+ * describes a thread that exists but was never resumed, so treating it as
+ * proof of absence would be a guess. This predicate gates the delete path's
+ * "already gone, reap the local rows" branch, where a false positive discards
+ * branch metadata for a conversation that is still on disk.
+ */
+export function isThreadNotFoundError(err: unknown): boolean {
+  if (!isInvalidRequest(err)) return false;
+  return /\bno rollout found for thread id\b/i.test(errorText(err));
 }

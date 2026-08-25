@@ -29,6 +29,14 @@ import { useTimelineStore } from '@/stores/timeline-store';
 import { useLayoutStore } from '@/stores/layout-store';
 import { cn } from '@/lib/utils';
 import { getApiErrorMessage } from '@/lib/api-error';
+import { BranchGraphDialog } from '@/components/branches/branch-graph-dialog';
+import { DeleteConversationDialog } from '@/components/branches/delete-conversation-dialog';
+import {
+  adoptionBlockReason,
+  useBranchAdoptionStatus,
+  useDeletePreview,
+  useDeleteThread,
+} from '@/hooks/use-thread-deletion';
 import type { ConfirmAction } from './sidebar/sidebar-types';
 import {
   threadLabel,
@@ -95,6 +103,8 @@ export function ThreadSidebar() {
   const [renameValue, setRenameValue] = useState('');
   const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null);
   const [dirPickerOpen, setDirPickerOpen] = useState(false);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [graphTargetId, setGraphTargetId] = useState<string | null>(null);
 
   // ── Queries ─────────────────────────────────────────────────────────
   const overviewThreadsQuery = useQuery({
@@ -120,6 +130,16 @@ export function ThreadSidebar() {
   const branchTreesQuery = useQuery({
     ...threadsListBranchTreesOptions(),
     staleTime: 30_000,
+  });
+
+  // ── Deletion ────────────────────────────────────────────────────────
+  const adoptionStatus = useBranchAdoptionStatus();
+  const deleteBlockedReason = adoptionBlockReason(adoptionStatus.data, t);
+  const deletePreview = useDeletePreview(deleteTargetId);
+  // No survivor to offer: this entry point deletes a whole conversation tree,
+  // so there is nothing left of it to land on.
+  const deleteThread = useDeleteThread({
+    onFinished: () => setDeleteTargetId(null),
   });
 
   // Branch members are versions of a message, not conversations of their own,
@@ -179,14 +199,24 @@ export function ThreadSidebar() {
     onError: (_err, vars) => setLoadingForThread(vars.path.threadId, false),
   });
 
+  /**
+   * True when the thread is already open *and on screen*.
+   *
+   * Selecting a thread leaves it selected in the store while the user moves to
+   * settings, diagnostics or integrations, so store state alone cannot answer
+   * "is a click a no-op" — the chat view has to actually be the one showing.
+   */
+  const isThreadOnScreen = (thread: ThreadDto, mode: 'live' | 'readOnly') =>
+    thread.id === threadId && threadMode === mode && activeView === 'chat';
+
   /** Navigate to archived thread — ThreadView handles loading (resume → fail → read). */
   const openArchivedThread = (thread: ThreadDto) => {
-    if (thread.id === threadId && threadMode === 'readOnly') return;
+    if (isThreadOnScreen(thread, 'readOnly')) return;
     void navigate({ to: '/t/$threadId', params: { threadId: thread.id } });
   };
 
   const openLiveThread = (thread: ThreadDto) => {
-    if (thread.id === threadId && threadMode === 'live') return;
+    if (isThreadOnScreen(thread, 'live')) return;
     setActiveThread(thread.id, thread.cwd, threadLabel(thread));
     setLoadingForThread(thread.id, true);
     resumeThread.mutate({ path: { threadId: thread.id } });
@@ -374,6 +404,9 @@ export function ThreadSidebar() {
         onUnarchive={() => unarchiveThread.mutate({ path: { threadId: thread.id } })}
         onCompact={() => setConfirmAction({ type: 'compact', thread })}
         onFork={() => forkThread.mutate({ path: { threadId: thread.id } })}
+        deleteBlockedReason={deleteBlockedReason}
+        onDelete={() => setDeleteTargetId(thread.id)}
+        onShowBranchGraph={() => setGraphTargetId(thread.id)}
       />
     );
   };
@@ -512,6 +545,27 @@ export function ThreadSidebar() {
         open={dirPickerOpen}
         onClose={() => setDirPickerOpen(false)}
         onSelect={(cwd) => createThread.mutate({ body: { cwd } })}
+      />
+      <DeleteConversationDialog
+        open={deleteTargetId !== null}
+        preview={deletePreview.data ?? null}
+        loading={deletePreview.isLoading}
+        errorMessage={
+          deletePreview.error ? getApiErrorMessage(deletePreview.error) : null
+        }
+        pending={deleteThread.isPending}
+        currentThreadId={threadId}
+        onConfirm={(preview) =>
+          deleteThread.mutate({
+            path: { threadId: preview.targetThreadId },
+            body: { expectedThreadIds: preview.threadIds },
+          })
+        }
+        onClose={() => setDeleteTargetId(null)}
+      />
+      <BranchGraphDialog
+        threadId={graphTargetId}
+        onClose={() => setGraphTargetId(null)}
       />
     </div>
   );

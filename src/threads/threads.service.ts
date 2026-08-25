@@ -17,6 +17,7 @@ import {
   type CreateMessageBranchResult,
 } from './threads-branching.service';
 import { ThreadResumeRegistryService } from './thread-resume-registry.service';
+import { ThreadDeletionRegistryService } from '../thread-deletion/thread-deletion-registry.service';
 import { isActiveWriterError, isNotMaterializedError } from './thread-errors';
 import { previewFromUserInput } from './thread-input-preview';
 
@@ -37,6 +38,7 @@ export class ThreadsService {
     private readonly resumeRegistry: ThreadResumeRegistryService,
     private readonly branches: ConversationBranchesService,
     private readonly branching: ThreadsBranchingService,
+    private readonly deletionRegistry: ThreadDeletionRegistryService,
   ) {}
 
   /**
@@ -140,6 +142,7 @@ export class ThreadsService {
    * @returns The resumed or already-active thread with resolved settings
    */
   async resumeThread(threadId: string): Promise<v2.ThreadResumeResponse> {
+    this.deletionRegistry.assertMutable(threadId);
     return this.ensureWritableThread(threadId);
   }
 
@@ -150,6 +153,7 @@ export class ThreadsService {
    * @returns The created turn
    */
   async startTurn(params: v2.TurnStartParams): Promise<v2.TurnStartResponse> {
+    this.deletionRegistry.assertMutable(params.threadId);
     if (!this.resumeRegistry.isResumed(params.threadId)) {
       await this.ensureWritableThread(params.threadId);
     }
@@ -188,6 +192,7 @@ export class ThreadsService {
    * @returns The turn id accepted by app-server
    */
   async steerTurn(params: v2.TurnSteerParams): Promise<v2.TurnSteerResponse> {
+    this.deletionRegistry.assertMutable(params.threadId);
     return this.codex.request<v2.TurnSteerResponse>('turn/steer', params);
   }
 
@@ -198,6 +203,7 @@ export class ThreadsService {
    * @param turnId - The turn to interrupt
    */
   async interruptTurn(threadId: string, turnId: string): Promise<void> {
+    this.deletionRegistry.assertMutable(threadId);
     await this.codex.request('turn/interrupt', { threadId, turnId });
   }
 
@@ -207,7 +213,9 @@ export class ThreadsService {
    * @param threadId - The thread identifier
    */
   async archiveThread(threadId: string): Promise<void> {
+    this.deletionRegistry.assertMutable(threadId);
     await this.applyToBranchTree(threadId, async (treeThreadId) => {
+      this.deletionRegistry.assertMutable(treeThreadId);
       await this.codex.request<v2.ThreadArchiveResponse>('thread/archive', {
         threadId: treeThreadId,
       });
@@ -222,8 +230,10 @@ export class ThreadsService {
    * @returns The restored thread
    */
   async unarchiveThread(threadId: string): Promise<v2.ThreadUnarchiveResponse> {
+    this.deletionRegistry.assertMutable(threadId);
     let requested: v2.ThreadUnarchiveResponse | undefined;
     await this.applyToBranchTree(threadId, async (treeThreadId) => {
+      this.deletionRegistry.assertMutable(treeThreadId);
       const response = await this.codex.request<v2.ThreadUnarchiveResponse>(
         'thread/unarchive',
         { threadId: treeThreadId },
@@ -242,6 +252,7 @@ export class ThreadsService {
    * @param threadId - The thread identifier
    */
   async compactThread(threadId: string): Promise<void> {
+    this.deletionRegistry.assertMutable(threadId);
     // This guard is ours, not a mirror of app-server: verified against 0.149.0,
     // `thread/compact/start` accepts a thread that has forks (unlike
     // `thread/delete`, which rejects it outright). We block it anyway because
@@ -282,6 +293,7 @@ export class ThreadsService {
    * @returns The forked thread and resolved settings
    */
   async forkThread(threadId: string): Promise<v2.ThreadForkResponse> {
+    this.deletionRegistry.assertMutable(threadId);
     const lastTurnId = await this.findStableExternalForkBoundary(threadId);
     const response = await this.codex.request<v2.ThreadForkResponse>(
       'thread/fork',
@@ -329,6 +341,7 @@ export class ThreadsService {
     sourceThreadId: string,
     body: CreateMessageBranchDto,
   ): Promise<CreateMessageBranchResult> {
+    this.deletionRegistry.assertMutable(sourceThreadId);
     return this.branching.createMessageBranch(sourceThreadId, body);
   }
 
@@ -360,6 +373,7 @@ export class ThreadsService {
    * @param name - Non-empty display name
    */
   async setThreadName(threadId: string, name: string): Promise<void> {
+    this.deletionRegistry.assertMutable(threadId);
     await this.codex.request<v2.ThreadSetNameResponse>('thread/name/set', {
       threadId,
       name,
