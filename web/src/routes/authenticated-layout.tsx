@@ -2,7 +2,14 @@
  * Authenticated layout: sidebar + header + main content outlet.
  * Replaces the old App.tsx conditional rendering.
  */
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+import type { PanelImperativeHandle } from 'react-resizable-panels';
 import { useQuery } from '@tanstack/react-query';
 import { Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
@@ -27,7 +34,11 @@ import { useFilesStore } from '@/stores/files-store';
 import { useLayoutStore } from '@/stores/layout-store';
 import { useTimelineStore } from '@/stores/timeline-store';
 import { useThemeStore } from '@/stores/theme-store';
-import { cn } from '@/lib/utils';
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from '@/components/ui/resizable';
 import { clearApiToken } from '@/auth-token';
 import { getSocket, resetSocket } from '@/socket';
 import { filesGetRoots, filesAddRoot } from '@/generated/api';
@@ -360,6 +371,55 @@ export function AuthenticatedLayout() {
   const desktopSidebarCollapsed = useLayoutStore(
     (s) => s.desktopSidebarCollapsed,
   );
+  const desktopSidebarSize = useLayoutStore((s) => s.desktopSidebarSize);
+  const setDesktopSidebarSize = useLayoutStore((s) => s.setDesktopSidebarSize);
+  const setDesktopSidebarCollapsed = useLayoutStore(
+    (s) => s.setDesktopSidebarCollapsed,
+  );
+  const desktopSidebarPanelRef = useRef<PanelImperativeHandle | null>(null);
+  const desktopSidebarCollapsedRef = useRef(desktopSidebarCollapsed);
+  const desktopSidebarLayoutReadyRef = useRef(false);
+
+  useEffect(() => {
+    desktopSidebarCollapsedRef.current = desktopSidebarCollapsed;
+  }, [desktopSidebarCollapsed]);
+
+  useEffect(() => {
+    desktopSidebarLayoutReadyRef.current = true;
+  }, []);
+
+  // Keep the existing collapse/expand controls in sync with the resizable panel.
+  useEffect(() => {
+    const panel = desktopSidebarPanelRef.current;
+    if (!panel) return;
+    if (desktopSidebarCollapsed) panel.collapse();
+    else if (panel.isCollapsed()) panel.expand();
+  }, [desktopSidebarCollapsed]);
+
+  const handleDesktopSidebarLayoutChanged = useCallback(
+    (layout: Record<string, number>) => {
+      const size = layout['app-sidebar'];
+      if (!Number.isFinite(size)) return;
+
+      if (size > 0) {
+        setDesktopSidebarSize(size);
+        // A drag from the collapsed handle should restore the sidebar state.
+        if (
+          desktopSidebarLayoutReadyRef.current &&
+          desktopSidebarCollapsedRef.current &&
+          !desktopSidebarPanelRef.current?.isCollapsed()
+        ) {
+          setDesktopSidebarCollapsed(false);
+        }
+      } else if (
+        desktopSidebarLayoutReadyRef.current &&
+        !desktopSidebarCollapsedRef.current
+      ) {
+        setDesktopSidebarCollapsed(true);
+      }
+    },
+    [setDesktopSidebarCollapsed, setDesktopSidebarSize],
+  );
   const hideUtilityWindow = useCallback(() => {
     const threadId = useTimelineStore.getState().threadId;
     if (threadId) {
@@ -379,47 +439,70 @@ export function AuthenticatedLayout() {
     if (isDesktop) setSidebarOpen(false);
   }, [isDesktop, setSidebarOpen]);
 
+  const mainContent = (
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col isolate">
+      <ChatHeader
+        dark={dark}
+        onToggleDark={toggleDark}
+        onToggleDiagnostics={handleToggleDiagnostics}
+      />
+      <CodexStatusBanner />
+      {!utilityWindow && <Outlet />}
+    </div>
+  );
+
   return (
     <TooltipProvider>
       <div className="flex h-full overflow-hidden bg-background">
-        {/* Desktop: inline sidebar with collapse animation */}
-        {isDesktop && (
-          <aside
-            data-app-sidebar
-            className={cn(
-              'relative z-10 shrink-0 overflow-hidden border-r border-[var(--glass-border-subtle)] transition-[width] duration-200 ease-in-out',
-              desktopSidebarCollapsed ? 'w-0 border-r-0' : 'w-64',
-            )}
+        {isDesktop ? (
+          <ResizablePanelGroup
+            id="app-shell"
+            orientation="horizontal"
+            className="min-h-0 min-w-0 flex-1"
+            defaultLayout={{
+              'app-sidebar': desktopSidebarSize,
+              'app-main': 100 - desktopSidebarSize,
+            }}
+            onLayoutChanged={handleDesktopSidebarLayoutChanged}
           >
-            <div className="flex h-full w-64 flex-col">
-              <ThreadSidebar />
-            </div>
-          </aside>
-        )}
-
-        {/* Mobile/Tablet: sidebar as Sheet overlay */}
-        {!isDesktop && (
-          <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-            <SheetContent
-              side="left"
-              className="!w-[280px] p-0 sm:!max-w-[320px]"
-              showCloseButton={false}
+            <ResizablePanel
+              id="app-sidebar"
+              panelRef={desktopSidebarPanelRef}
+              minSize="12%"
+              maxSize="40%"
+              collapsedSize="0%"
+              collapsible
             >
-              <SheetTitle className="sr-only">{t('Navigation')}</SheetTitle>
-              <ThreadSidebar />
-            </SheetContent>
-          </Sheet>
+              <aside
+                data-app-sidebar
+                className="relative z-10 flex h-full min-w-0 overflow-hidden"
+              >
+                <div className="flex h-full min-w-0 flex-1 flex-col">
+                  <ThreadSidebar />
+                </div>
+              </aside>
+            </ResizablePanel>
+            <ResizableHandle withHandle />
+            <ResizablePanel id="app-main" minSize="20%">
+              {mainContent}
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        ) : (
+          <>
+            {/* Mobile/Tablet: sidebar as Sheet overlay */}
+            <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+              <SheetContent
+                side="left"
+                className="!w-[280px] p-0 sm:!max-w-[320px]"
+                showCloseButton={false}
+              >
+                <SheetTitle className="sr-only">{t('Navigation')}</SheetTitle>
+                <ThreadSidebar />
+              </SheetContent>
+            </Sheet>
+            {mainContent}
+          </>
         )}
-
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col isolate">
-          <ChatHeader
-            dark={dark}
-            onToggleDark={toggleDark}
-            onToggleDiagnostics={handleToggleDiagnostics}
-          />
-          <CodexStatusBanner />
-          {!utilityWindow && <Outlet />}
-        </div>
 
         <PersistentUtilityWindow
           kind="files"

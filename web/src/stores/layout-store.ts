@@ -5,6 +5,8 @@
  *
  * Persisted fields (localStorage via Zustand persist):
  *   - desktopSidebarCollapsed: whether desktop sidebar is manually collapsed
+ *   - desktopSidebarSize: desktop sidebar width as a percentage of the app shell
+ *   - sessionFileTreeSize: session panel file tree width as a percentage
  *   - collapsedGroupKeys: workspace group collapse preferences
  *
  * Runtime-only fields (reset on refresh):
@@ -21,12 +23,26 @@ export type SidebarViewState =
   | { type: 'workspaceDetail'; cwd: string }
   | { type: 'archivedDetail' };
 
+const DESKTOP_SIDEBAR_MIN = 12;
+const DESKTOP_SIDEBAR_MAX = 40;
+const SESSION_FILE_TREE_MIN = 16;
+const SESSION_FILE_TREE_MAX = 45;
+
+function clampSize(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, Math.round(value * 100) / 100));
+}
+
 // ── Store interface ──────────────────────────────────────────────────
 
 interface LayoutState {
   // ── Persisted ──────────────────────────────────────────────────────
   /** Whether the desktop sidebar is manually collapsed. */
   desktopSidebarCollapsed: boolean;
+  /** Desktop sidebar width as a percentage of the app shell. */
+  desktopSidebarSize: number;
+  /** Session panel file tree width as a percentage of the panel. */
+  sessionFileTreeSize: number;
   /** Workspace group keys that are collapsed in the sidebar thread list. */
   collapsedGroupKeys: string[];
 
@@ -41,6 +57,8 @@ interface LayoutState {
   toggleSidebarOpen: () => void;
   setDesktopSidebarCollapsed: (collapsed: boolean) => void;
   toggleDesktopSidebarCollapsed: () => void;
+  setDesktopSidebarSize: (size: number) => void;
+  setSessionFileTreeSize: (size: number) => void;
   setSidebarView: (view: SidebarViewState) => void;
   /** Toggle a workspace group's collapsed state. */
   toggleCollapsedGroup: (key: string) => void;
@@ -53,6 +71,8 @@ export const useLayoutStore = create<LayoutState>()(
     (set, get) => ({
       // ── Persisted defaults ───────────────────────────────────────────
       desktopSidebarCollapsed: false,
+      desktopSidebarSize: 20,
+      sessionFileTreeSize: 22,
       collapsedGroupKeys: [],
 
       // ── Runtime defaults ─────────────────────────────────────────────
@@ -67,6 +87,22 @@ export const useLayoutStore = create<LayoutState>()(
         set({ desktopSidebarCollapsed: collapsed }),
       toggleDesktopSidebarCollapsed: () =>
         set((s) => ({ desktopSidebarCollapsed: !s.desktopSidebarCollapsed })),
+      setDesktopSidebarSize: (size) =>
+        set({
+          desktopSidebarSize: clampSize(
+            size,
+            DESKTOP_SIDEBAR_MIN,
+            DESKTOP_SIDEBAR_MAX,
+          ),
+        }),
+      setSessionFileTreeSize: (size) =>
+        set({
+          sessionFileTreeSize: clampSize(
+            size,
+            SESSION_FILE_TREE_MIN,
+            SESSION_FILE_TREE_MAX,
+          ),
+        }),
 
       setSidebarView: (view) => set({ sidebarView: view }),
 
@@ -86,6 +122,8 @@ export const useLayoutStore = create<LayoutState>()(
       name: 'codex.webui.layout',
       partialize: (state) => ({
         desktopSidebarCollapsed: state.desktopSidebarCollapsed,
+        desktopSidebarSize: state.desktopSidebarSize,
+        sessionFileTreeSize: state.sessionFileTreeSize,
         collapsedGroupKeys: state.collapsedGroupKeys,
       }),
     },
