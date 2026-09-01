@@ -3,7 +3,7 @@
  * Rendering is split into sidebar/ sub-components; this file orchestrates
  * state, queries, mutations, and view routing.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { FolderOpen, PanelLeftClose, Puzzle, Plus, Settings, Terminal } from 'lucide-react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -93,6 +93,8 @@ export function ThreadSidebar() {
   const collapsedGroupKeys = useLayoutStore((s) => s.collapsedGroupKeys);
   const toggleCollapsedGroup = useLayoutStore((s) => s.toggleCollapsedGroup);
   const toggleDesktopSidebarCollapsed = useLayoutStore((s) => s.toggleDesktopSidebarCollapsed);
+  const lastThreadByBranchRoot = useLayoutStore((s) => s.lastThreadByBranchRoot);
+  const rememberBranchThread = useLayoutStore((s) => s.rememberBranchThread);
   // Derive Set<string> for child components that expect it
   const collapsedGroups = useMemo(() => new Set(collapsedGroupKeys), [collapsedGroupKeys]);
 
@@ -171,6 +173,26 @@ export function ThreadSidebar() {
     ? (branchRootIndex.get(threadId) ?? threadId)
     : null;
 
+  // Message versions are separate threads hidden behind one sidebar row. Keep
+  // the row pointed at the version the user actually viewed last, including
+  // when they leave chat for another top-level view or reload the WebUI.
+  useEffect(() => {
+    if (!threadId) return;
+    const rootThreadId = branchRootIndex.get(threadId);
+    if (rootThreadId) {
+      rememberBranchThread(rootThreadId, threadId);
+      return;
+    }
+    if (branchMemberIndex.has(threadId)) {
+      rememberBranchThread(threadId, threadId);
+    }
+  }, [
+    branchMemberIndex,
+    branchRootIndex,
+    rememberBranchThread,
+    threadId,
+  ]);
+
   const invalidateThreads = () => {
     void queryClient.invalidateQueries({ queryKey: threadsListThreadsQueryKey() });
   };
@@ -221,6 +243,16 @@ export function ThreadSidebar() {
     setLoadingForThread(thread.id, true);
     resumeThread.mutate({ path: { threadId: thread.id } });
     void navigate({ to: '/t/$threadId', params: { threadId: thread.id } });
+  };
+
+  /** Resolves a collapsed session row to its last still-existing version. */
+  const restoreLastViewedVersion = (thread: ThreadDto): ThreadDto => {
+    const rememberedThreadId = lastThreadByBranchRoot[thread.id];
+    if (!rememberedThreadId || rememberedThreadId === thread.id) return thread;
+    const members = branchMemberIndex.get(thread.id) ?? [];
+    return members.includes(rememberedThreadId)
+      ? { ...thread, id: rememberedThreadId }
+      : thread;
   };
 
   /**
@@ -398,7 +430,11 @@ export function ThreadSidebar() {
         pendingApprovalCount={pendingApprovalCount}
         waitingOnUserInput={waitingOnUserInput}
         hasBranchDescendants={branchMemberIndex.has(thread.id)}
-        onOpen={() => { if (archived) void openArchivedThread(thread); else openLiveThread(thread); }}
+        onOpen={() => {
+          const target = restoreLastViewedVersion(thread);
+          if (archived) void openArchivedThread(target);
+          else openLiveThread(target);
+        }}
         onRename={() => startRename(thread)}
         onArchive={() => setConfirmAction({ type: 'archive', thread })}
         onUnarchive={() => unarchiveThread.mutate({ path: { threadId: thread.id } })}

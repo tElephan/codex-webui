@@ -8,6 +8,7 @@
  *   - desktopSidebarSize: desktop sidebar width as a percentage of the app shell
  *   - sessionFileTreeSize: session panel file tree width as a percentage
  *   - collapsedGroupKeys: workspace group collapse preferences
+ *   - lastThreadByBranchRoot: last viewed message version for each session
  *
  * Runtime-only fields (reset on refresh):
  *   - sidebarOpen: mobile/tablet Sheet open state
@@ -45,6 +46,8 @@ interface LayoutState {
   sessionFileTreeSize: number;
   /** Workspace group keys that are collapsed in the sidebar thread list. */
   collapsedGroupKeys: string[];
+  /** Last viewed thread/version for each collapsed branch-tree session. */
+  lastThreadByBranchRoot: Record<string, string>;
 
   // ── Runtime only ───────────────────────────────────────────────────
   /** Whether the mobile/tablet sidebar Sheet is open. */
@@ -64,6 +67,8 @@ interface LayoutState {
   toggleCollapsedGroup: (key: string) => void;
   /** Check if a workspace group is collapsed. */
   isGroupCollapsed: (key: string) => boolean;
+  /** Remember which message version was last viewed in a collapsed session. */
+  rememberBranchThread: (rootThreadId: string, threadId: string) => void;
 }
 
 export const useLayoutStore = create<LayoutState>()(
@@ -74,6 +79,7 @@ export const useLayoutStore = create<LayoutState>()(
       desktopSidebarSize: 20,
       sessionFileTreeSize: 22,
       collapsedGroupKeys: [],
+      lastThreadByBranchRoot: {},
 
       // ── Runtime defaults ─────────────────────────────────────────────
       sidebarOpen: false,
@@ -117,6 +123,19 @@ export const useLayoutStore = create<LayoutState>()(
         }),
 
       isGroupCollapsed: (key) => get().collapsedGroupKeys.includes(key),
+
+      rememberBranchThread: (rootThreadId, threadId) =>
+        set((state) => {
+          if (state.lastThreadByBranchRoot[rootThreadId] === threadId) {
+            return state;
+          }
+          return {
+            lastThreadByBranchRoot: {
+              ...state.lastThreadByBranchRoot,
+              [rootThreadId]: threadId,
+            },
+          };
+        }),
     }),
     {
       name: 'codex.webui.layout',
@@ -125,6 +144,7 @@ export const useLayoutStore = create<LayoutState>()(
         desktopSidebarSize: state.desktopSidebarSize,
         sessionFileTreeSize: state.sessionFileTreeSize,
         collapsedGroupKeys: state.collapsedGroupKeys,
+        lastThreadByBranchRoot: state.lastThreadByBranchRoot,
       }),
     },
   ),
