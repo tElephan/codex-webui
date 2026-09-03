@@ -46,6 +46,8 @@ export interface NotificationContext {
   queryClient: QueryClient;
   /** Removes all local runtime state for threads that no longer exist. */
   forgetThreads: (threadIds: string[]) => void;
+  /** Starts monitoring a related agent thread without changing the current view. */
+  subscribeThread: (threadId: string) => void;
   updateCurrentTurn: (
     turnId: string,
     updater: (
@@ -183,17 +185,29 @@ function collabAgentItemFromPayload(
     completed,
     collabTool: item.tool as TurnItem['collabTool'],
     collabStatus: item.status as TurnItem['collabStatus'],
-    senderThreadId: item.senderThreadId as string | undefined,
+    senderThreadId:
+      (item.senderThreadId as string | undefined) ??
+      (item.sender_thread_id as string | undefined),
     receiverThreadIds: Array.isArray(item.receiverThreadIds)
       ? (item.receiverThreadIds as string[])
-      : [],
+      : Array.isArray(item.receiver_thread_ids)
+        ? (item.receiver_thread_ids as string[])
+        : [],
     prompt: (item.prompt as string | null) ?? null,
     model: (item.model as string | null) ?? null,
-    reasoningEffort: (item.reasoningEffort as string | null) ?? null,
-    agentsStates:
-      item.agentsStates && typeof item.agentsStates === 'object'
-        ? (item.agentsStates as TurnItem['agentsStates'])
-        : {},
+    reasoningEffort:
+      (item.reasoningEffort as string | null) ??
+      (item.reasoning_effort as string | null) ??
+      null,
+    agentsStates: (() => {
+      const states =
+        item.agentsStates && typeof item.agentsStates === 'object'
+          ? item.agentsStates
+          : item.agents_states && typeof item.agents_states === 'object'
+            ? item.agents_states
+            : null;
+      return states ? (states as TurnItem['agentsStates']) : {};
+    })(),
   };
 }
 
@@ -207,9 +221,55 @@ function subAgentActivityFromPayload(
     content: '',
     completed: true,
     activityKind: item.kind as TurnItem['activityKind'],
-    agentThreadId: item.agentThreadId as string | undefined,
-    agentPath: item.agentPath as string | undefined,
+    agentThreadId:
+      (item.agentThreadId as string | undefined) ??
+      (item.agent_thread_id as string | undefined),
+    agentPath:
+      (item.agentPath as string | undefined) ??
+      (item.agent_path as string | undefined),
   };
+}
+
+function relatedAgentThreadIds(item: Record<string, unknown>): string[] {
+  const ids = new Set<string>();
+  const receiverThreadIds = Array.isArray(item.receiverThreadIds)
+    ? item.receiverThreadIds
+    : Array.isArray(item.receiver_thread_ids)
+      ? item.receiver_thread_ids
+      : [];
+  for (const value of receiverThreadIds) {
+    if (typeof value === 'string' && value.trim()) ids.add(value.trim());
+  }
+
+  const agentThreadId =
+    typeof item.agentThreadId === 'string'
+      ? item.agentThreadId
+      : typeof item.agent_thread_id === 'string'
+        ? item.agent_thread_id
+        : null;
+  if (agentThreadId?.trim()) ids.add(agentThreadId.trim());
+
+  const states =
+    item.agentsStates && typeof item.agentsStates === 'object'
+      ? item.agentsStates
+      : item.agents_states && typeof item.agents_states === 'object'
+        ? item.agents_states
+        : null;
+  if (states) {
+    for (const threadId of Object.keys(states)) {
+      if (threadId.trim()) ids.add(threadId.trim());
+    }
+  }
+  return [...ids];
+}
+
+function subscribeRelatedAgentThreads(
+  item: Record<string, unknown>,
+  ctx: NotificationContext,
+): void {
+  for (const threadId of relatedAgentThreadIds(item)) {
+    if (threadId !== ctx.threadId) ctx.subscribeThread(threadId);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -322,11 +382,13 @@ const handleItemStarted: Handler = (params, ctx) => {
     }));
   }
   if (item.type === 'collabAgentToolCall') {
+    subscribeRelatedAgentThreads(item, ctx);
     ctx.updateTurnItem(turnId, id, () =>
       collabAgentItemFromPayload(item, id, false),
     );
   }
   if (item.type === 'subAgentActivity') {
+    subscribeRelatedAgentThreads(item, ctx);
     ctx.updateTurnItem(turnId, id, () => subAgentActivityFromPayload(item, id));
   }
 };
@@ -399,6 +461,7 @@ const handleItemCompleted: Handler = (params, ctx) => {
     }));
   }
   if (item.type === 'collabAgentToolCall') {
+    subscribeRelatedAgentThreads(item, ctx);
     ctx.updateTurnItem(turnId, completedItemId, (existing) => ({
       ...collabAgentItemFromPayload(item, completedItemId, true),
       ...(existing?.type === 'collabAgentToolCall' ? existing : {}),
@@ -409,23 +472,31 @@ const handleItemCompleted: Handler = (params, ctx) => {
         'completed',
       collabTool: (item.tool as TurnItem['collabTool']) ?? existing?.collabTool,
       senderThreadId:
-        (item.senderThreadId as string | undefined) ?? existing?.senderThreadId,
+        (item.senderThreadId as string | undefined) ??
+        (item.sender_thread_id as string | undefined) ??
+        existing?.senderThreadId,
       receiverThreadIds: Array.isArray(item.receiverThreadIds)
         ? (item.receiverThreadIds as string[])
-        : (existing?.receiverThreadIds ?? []),
+        : Array.isArray(item.receiver_thread_ids)
+          ? (item.receiver_thread_ids as string[])
+          : (existing?.receiverThreadIds ?? []),
       prompt: (item.prompt as string | null) ?? existing?.prompt ?? null,
       model: (item.model as string | null) ?? existing?.model ?? null,
       reasoningEffort:
         (item.reasoningEffort as string | null) ??
+        (item.reasoning_effort as string | null) ??
         existing?.reasoningEffort ??
         null,
       agentsStates:
         item.agentsStates && typeof item.agentsStates === 'object'
           ? (item.agentsStates as TurnItem['agentsStates'])
-          : (existing?.agentsStates ?? {}),
+          : item.agents_states && typeof item.agents_states === 'object'
+            ? (item.agents_states as TurnItem['agentsStates'])
+            : (existing?.agentsStates ?? {}),
     }));
   }
   if (item.type === 'subAgentActivity') {
+    subscribeRelatedAgentThreads(item, ctx);
     ctx.updateTurnItem(turnId, completedItemId, () =>
       subAgentActivityFromPayload(item, completedItemId),
     );

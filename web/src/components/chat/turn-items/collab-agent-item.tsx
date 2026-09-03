@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Bot,
   CheckCircle2,
@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from '@tanstack/react-router';
 import type { TurnItem } from '@/types/timeline';
 import { cn } from '@/lib/utils';
+import { useTimelineStore } from '@/stores/timeline-store';
 
 interface Props {
   item: TurnItem;
@@ -49,6 +50,55 @@ export function CollabAgentItem({ item }: Props) {
   const activity = item.type === 'subAgentActivity';
   const tool = item.collabTool ?? 'spawnAgent';
   const states = Object.entries(item.agentsStates ?? {});
+  const childThreadIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const id of item.receiverThreadIds ?? []) ids.add(id);
+    for (const [id] of states) ids.add(id);
+    if (item.agentThreadId) ids.add(item.agentThreadId);
+    return [...ids];
+  }, [item.agentThreadId, item.receiverThreadIds, states]);
+  const threadsById = useTimelineStore((state) => state.threadsById);
+  const childProgress = useMemo(
+    () =>
+      childThreadIds.map((threadId) => {
+        const runtime = threadsById[threadId];
+        const workItems = (runtime?.timeline ?? [])
+          .filter((entry) => entry.kind === 'turn')
+          .flatMap((entry) => entry.items)
+          .filter((workItem) => {
+            if (workItem.type === 'agentMessage')
+              return workItem.content.trim();
+            if (workItem.type === 'reasoning') return workItem.content.trim();
+            if (workItem.type === 'commandExecution') {
+              return Boolean(workItem.command || workItem.content.trim());
+            }
+            if (workItem.type === 'fileChange')
+              return Boolean(workItem.filePath);
+            if (workItem.type === 'mcpToolCall')
+              return Boolean(workItem.toolName);
+            return false;
+          });
+        const recent = workItems.slice(-3).map((workItem) => {
+          if (workItem.type === 'agentMessage') return workItem.content.trim();
+          if (workItem.type === 'reasoning') return workItem.content.trim();
+          if (workItem.type === 'commandExecution') {
+            return workItem.command
+              ? `$ ${workItem.command}`
+              : workItem.content.trim();
+          }
+          if (workItem.type === 'fileChange') {
+            return `${workItem.filePath ?? 'file'} changed`;
+          }
+          return `${workItem.toolServer ?? 'MCP'}/${workItem.toolName ?? 'tool'}`;
+        });
+        return {
+          threadId,
+          running: Boolean(runtime?.loading || runtime?.activeTurnId),
+          recent,
+        };
+      }),
+    [childThreadIds, threadsById],
+  );
   const hasDetails = Boolean(
     item.prompt ||
     item.model ||
@@ -207,6 +257,50 @@ export function CollabAgentItem({ item }: Props) {
                 ))}
               </div>
             )}
+          {childProgress.some(
+            (child) => child.recent.length > 0 || child.running,
+          ) && (
+            <div className="space-y-1.5">
+              <div className="font-medium text-foreground/80">
+                {t('Agent work')}
+              </div>
+              {childProgress.map((child) => (
+                <div
+                  key={child.threadId}
+                  className="rounded bg-muted/40 px-2 py-1.5"
+                >
+                  <div className="mb-1 flex items-center gap-1.5">
+                    {child.running && (
+                      <Loader2 className="h-3 w-3 animate-spin text-blue-400" />
+                    )}
+                    <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground/70">
+                      {child.threadId}
+                    </span>
+                    <button
+                      type="button"
+                      className="shrink-0 text-primary hover:underline"
+                      onClick={() => openAgentThread(child.threadId)}
+                    >
+                      {t('Open agent thread')}
+                    </button>
+                  </div>
+                  {child.recent.map((line, index) => (
+                    <div
+                      key={`${child.threadId}-${index}`}
+                      className="line-clamp-3 whitespace-pre-wrap break-words border-t border-border/20 py-1 text-foreground/70"
+                    >
+                      {line.length > 400 ? `${line.slice(0, 400)}…` : line}
+                    </div>
+                  ))}
+                  {child.running && child.recent.length === 0 && (
+                    <div className="border-t border-border/20 py-1 text-foreground/60">
+                      {t('Waiting for agent output...')}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -109,6 +109,8 @@
   "Agent path": "Agent 路径",
   "Agent thread": "Agent 会话",
   "Open agent thread": "打开 Agent 会话",
+  "Agent work": "Agent 工作过程",
+  "Waiting for agent output...": "等待 Agent 输出…",
   "running": "运行中",
   "interrupted": "已中断",
   "completed": "已完成",

@@ -104,17 +104,29 @@ function parseTurnItem(item: Record<string, unknown>): TurnItem | null {
         completed: item.status !== 'inProgress',
         collabTool: item.tool as TurnItem['collabTool'],
         collabStatus: item.status as TurnItem['collabStatus'],
-        senderThreadId: item.senderThreadId as string | undefined,
+        senderThreadId:
+          (item.senderThreadId as string | undefined) ??
+          (item.sender_thread_id as string | undefined),
         receiverThreadIds: Array.isArray(item.receiverThreadIds)
           ? (item.receiverThreadIds as string[])
-          : [],
+          : Array.isArray(item.receiver_thread_ids)
+            ? (item.receiver_thread_ids as string[])
+            : [],
         prompt: (item.prompt as string | null) ?? null,
         model: (item.model as string | null) ?? null,
-        reasoningEffort: (item.reasoningEffort as string | null) ?? null,
-        agentsStates:
-          item.agentsStates && typeof item.agentsStates === 'object'
-            ? (item.agentsStates as TurnItem['agentsStates'])
-            : {},
+        reasoningEffort:
+          (item.reasoningEffort as string | null) ??
+          (item.reasoning_effort as string | null) ??
+          null,
+        agentsStates: (() => {
+          const states =
+            item.agentsStates && typeof item.agentsStates === 'object'
+              ? item.agentsStates
+              : item.agents_states && typeof item.agents_states === 'object'
+                ? item.agents_states
+                : null;
+          return states ? (states as TurnItem['agentsStates']) : {};
+        })(),
       };
     case 'subAgentActivity':
       return {
@@ -123,8 +135,12 @@ function parseTurnItem(item: Record<string, unknown>): TurnItem | null {
         content: '',
         completed: true,
         activityKind: item.kind as TurnItem['activityKind'],
-        agentThreadId: item.agentThreadId as string | undefined,
-        agentPath: item.agentPath as string | undefined,
+        agentThreadId:
+          (item.agentThreadId as string | undefined) ??
+          (item.agent_thread_id as string | undefined),
+        agentPath:
+          (item.agentPath as string | undefined) ??
+          (item.agent_path as string | undefined),
       };
     case 'commandExecution':
       return {
@@ -525,6 +541,7 @@ interface TimelineState {
 
   ensureThreadState: (input: ThreadRuntimeInput) => void;
   selectThread: (threadId: string | null) => void;
+  subscribeThread: (threadId: string) => void;
   resubscribeAll: () => void;
   unsubscribeThread: (threadId: string) => void;
   forgetThreads: (threadIds: string[]) => void;
@@ -758,6 +775,21 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
           threadsById: { ...threadsById, [threadId]: runtime },
         };
       });
+    },
+
+    subscribeThread: (threadId) => {
+      const normalizedThreadId = threadId.trim();
+      if (!normalizedThreadId) return;
+
+      get().ensureThreadState({ threadId: normalizedThreadId, mode: 'live' });
+      if (get().subscribedThreadIds.has(normalizedThreadId)) return;
+
+      getSocket().emit('thread.subscribe', { threadId: normalizedThreadId });
+      set((state) => ({
+        subscribedThreadIds: new Set(state.subscribedThreadIds).add(
+          normalizedThreadId,
+        ),
+      }));
     },
 
     resubscribeAll: () => {

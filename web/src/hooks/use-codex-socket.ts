@@ -9,9 +9,22 @@ import { useConnectionStore } from '../stores/connection-store';
 import { useTimelineStore } from '../stores/timeline-store';
 import { dispatchNextQueuedTurn } from '../stores/queued-turn-store';
 import { showSnackbar } from '@/stores/snackbar-store';
-import { handleNotification, type NotificationContext } from './notification-handlers';
-import { tokenUsageReadThreadTokenUsage, turnDiffReadThreadTurnDiffs, turnErrorsReadThreadTurnErrors, threadsResumeThread } from '@/generated/api/sdk.gen';
-import { parseAvailableDecisions, parseStringArray, parseNetworkAmendments } from '@/lib/approval-parsers';
+import {
+  handleNotification,
+  type NotificationContext,
+} from './notification-handlers';
+import {
+  threadsReadThread,
+  tokenUsageReadThreadTokenUsage,
+  turnDiffReadThreadTurnDiffs,
+  turnErrorsReadThreadTurnErrors,
+  threadsResumeThread,
+} from '@/generated/api/sdk.gen';
+import {
+  parseAvailableDecisions,
+  parseStringArray,
+  parseNetworkAmendments,
+} from '@/lib/approval-parsers';
 import { userInputFromSocket } from '@/lib/user-input-parsers';
 import i18n from '@/i18n';
 
@@ -19,10 +32,17 @@ type CodexLifecycleEvent =
   | { type: 'appServerRestarting'; generation: number; delayMs: number }
   | { type: 'appServerUnavailable'; generation: number; message: string }
   | { type: 'appServerReady'; generation: number; restarted: boolean }
-  | { type: 'autoResumeCompleted'; generation: number; resumedThreadIds: string[]; failedThreadIds: string[] };
+  | {
+      type: 'autoResumeCompleted';
+      generation: number;
+      resumedThreadIds: string[];
+      failedThreadIds: string[];
+    };
 
 function dispatchJumpToThread(threadId: string): void {
-  window.dispatchEvent(new CustomEvent('codex-webui:jump-thread', { detail: { threadId } }));
+  window.dispatchEvent(
+    new CustomEvent('codex-webui:jump-thread', { detail: { threadId } }),
+  );
 }
 
 export function useCodexSocket(enabled = true) {
@@ -46,30 +66,89 @@ export function useCodexSocket(enabled = true) {
     const ctx: NotificationContext = {
       threadId: null,
       queryClient,
-      forgetThreads: (threadIds) => useTimelineStore.getState().forgetThreads(threadIds),
+      forgetThreads: (threadIds) =>
+        useTimelineStore.getState().forgetThreads(threadIds),
+      subscribeThread: (threadId) => {
+        const store = useTimelineStore.getState();
+        const alreadySubscribed = store.subscribedThreadIds.has(threadId);
+        store.subscribeThread(threadId);
+        if (alreadySubscribed) return;
+
+        // A child may have emitted its first events before the room join was
+        // processed. Read its current snapshot once, then let the socket carry
+        // subsequent deltas. Never replace a runtime that already received a
+        // live event, as that could discard newer streamed content.
+        void threadsReadThread({
+          path: { threadId },
+          query: { includeTurns: true },
+        })
+          .then(({ data }) => {
+            if (!data) return;
+            const current = useTimelineStore
+              .getState()
+              .getThreadRuntime(threadId);
+            if (!current || current.timeline.length > 0) return;
+            const childStore = useTimelineStore.getState();
+            childStore.hydrateTimelineForThread(
+              threadId,
+              data.thread.turns ?? [],
+              data.thread.cwd,
+            );
+            childStore.setThreadTitleForThread(
+              threadId,
+              data.thread.name ?? data.thread.preview ?? null,
+            );
+            childStore.setThreadStatusForThread(threadId, data.thread.status);
+            const activeTurn = data.thread.turns?.find(
+              (turn: { status?: string }) => turn.status === 'inProgress',
+            );
+            childStore.setActiveTurnIdForThread(
+              threadId,
+              activeTurn?.id ?? null,
+            );
+            childStore.setLoadingForThread(threadId, Boolean(activeTurn));
+          })
+          .catch(() => undefined);
+      },
       updateCurrentTurn: (turnId, updater) => {
         const threadId = ctx.threadId;
-        if (threadId) useTimelineStore.getState().updateCurrentTurnForThread(threadId, turnId, updater);
+        if (threadId)
+          useTimelineStore
+            .getState()
+            .updateCurrentTurnForThread(threadId, turnId, updater);
       },
       updateTurnItem: (turnId, itemId, updater) => {
         const threadId = ctx.threadId;
-        if (threadId) useTimelineStore.getState().updateTurnItemForThread(threadId, turnId, itemId, updater);
+        if (threadId)
+          useTimelineStore
+            .getState()
+            .updateTurnItemForThread(threadId, turnId, itemId, updater);
       },
       updateTurnDiff: (turnId, diff) => {
         const threadId = ctx.threadId;
-        if (threadId) useTimelineStore.getState().updateTurnDiffForThread(threadId, turnId, diff);
+        if (threadId)
+          useTimelineStore
+            .getState()
+            .updateTurnDiffForThread(threadId, turnId, diff);
       },
       updateTurnPlan: (turnId, plan) => {
         const threadId = ctx.threadId;
-        if (threadId) useTimelineStore.getState().updateTurnPlanForThread(threadId, turnId, plan);
+        if (threadId)
+          useTimelineStore
+            .getState()
+            .updateTurnPlanForThread(threadId, turnId, plan);
       },
       appendPlanDelta: (turnId, itemId, delta) => {
         const threadId = ctx.threadId;
-        if (threadId) useTimelineStore.getState().appendPlanDeltaForThread(threadId, turnId, itemId, delta);
+        if (threadId)
+          useTimelineStore
+            .getState()
+            .appendPlanDeltaForThread(threadId, turnId, itemId, delta);
       },
       setLoading: (loading) => {
         const threadId = ctx.threadId;
-        if (threadId) useTimelineStore.getState().setLoadingForThread(threadId, loading);
+        if (threadId)
+          useTimelineStore.getState().setLoadingForThread(threadId, loading);
       },
       expandReasoning: (itemId) => {
         const threadId = ctx.threadId;
@@ -83,38 +162,61 @@ export function useCodexSocket(enabled = true) {
           useTimelineStore.getState().collapseReasoning(itemId);
         }
       },
-      addApproval: (approval) => useTimelineStore.getState().addApprovalForThread(approval.threadId, approval),
+      addApproval: (approval) =>
+        useTimelineStore
+          .getState()
+          .addApprovalForThread(approval.threadId, approval),
       addSystemMessage: (message, severity, turnId) => {
         const threadId = ctx.threadId;
-        if (threadId) useTimelineStore.getState().addSystemMessageForThread(threadId, message, severity, turnId);
+        if (threadId)
+          useTimelineStore
+            .getState()
+            .addSystemMessageForThread(threadId, message, severity, turnId);
       },
       addSystemError: (message) => {
         const threadId = ctx.threadId;
-        if (threadId) useTimelineStore.getState().addSystemErrorForThread(threadId, message);
+        if (threadId)
+          useTimelineStore
+            .getState()
+            .addSystemErrorForThread(threadId, message);
       },
       setTokenUsage: (turnId, usage) => {
         const threadId = ctx.threadId;
-        if (threadId) useTimelineStore.getState().setTokenUsageForThread(threadId, turnId, usage);
+        if (threadId)
+          useTimelineStore
+            .getState()
+            .setTokenUsageForThread(threadId, turnId, usage);
       },
       setThreadStatus: (status) => {
         const threadId = ctx.threadId;
-        if (threadId) useTimelineStore.getState().setThreadStatusForThread(threadId, status);
+        if (threadId)
+          useTimelineStore
+            .getState()
+            .setThreadStatusForThread(threadId, status);
       },
       setActiveTurnId: (turnId) => {
         const threadId = ctx.threadId;
-        if (threadId) useTimelineStore.getState().setActiveTurnIdForThread(threadId, turnId);
+        if (threadId)
+          useTimelineStore
+            .getState()
+            .setActiveTurnIdForThread(threadId, turnId);
       },
       clearActiveTurn: () => {
         const threadId = ctx.threadId;
-        if (threadId) useTimelineStore.getState().clearActiveTurnForThread(threadId);
+        if (threadId)
+          useTimelineStore.getState().clearActiveTurnForThread(threadId);
       },
       setThreadTitle: (title) => {
         const threadId = ctx.threadId;
-        if (threadId) useTimelineStore.getState().setThreadTitleForThread(threadId, title);
+        if (threadId)
+          useTimelineStore.getState().setThreadTitleForThread(threadId, title);
       },
       resolveApprovalByRequestId: (requestId) => {
         const threadId = ctx.threadId;
-        if (threadId) useTimelineStore.getState().resolveApprovalByRequestIdForThread(threadId, requestId);
+        if (threadId)
+          useTimelineStore
+            .getState()
+            .resolveApprovalByRequestIdForThread(threadId, requestId);
       },
     };
 
@@ -148,7 +250,9 @@ export function useCodexSocket(enabled = true) {
           store.setThreadStatusForThread(threadId, { type: 'systemError' });
           store.addSystemMessageForThread(
             threadId,
-            i18n.t('Codex app-server is restarting. Waiting to resume this thread.'),
+            i18n.t(
+              'Codex app-server is restarting. Waiting to resume this thread.',
+            ),
             'warning',
           );
         }
@@ -178,9 +282,15 @@ export function useCodexSocket(enabled = true) {
         void threadsResumeThread({ path: { threadId } })
           .then(async ({ data }) => {
             if (!data) return;
-            store.hydrateTimelineForThread(threadId, data.thread.turns, data.cwd);
+            store.hydrateTimelineForThread(
+              threadId,
+              data.thread.turns,
+              data.cwd,
+            );
             store.setThreadStatusForThread(threadId, data.thread.status);
-            const activeTurn = data.thread.turns?.find((t: { status?: string }) => t.status === 'inProgress');
+            const activeTurn = data.thread.turns?.find(
+              (t: { status?: string }) => t.status === 'inProgress',
+            );
             store.setActiveTurnIdForThread(threadId, activeTurn?.id ?? null);
             store.setLoadingForThread(threadId, Boolean(activeTurn));
             if (!activeTurn) void dispatchNextQueuedTurn(threadId);
@@ -191,13 +301,22 @@ export function useCodexSocket(enabled = true) {
               turnErrorsReadThreadTurnErrors({ path: { threadId } }),
             ]);
             if (tokenRes.status === 'fulfilled' && tokenRes.value.data) {
-              store.hydrateTokenUsageForThread(threadId, tokenRes.value.data.turns);
+              store.hydrateTokenUsageForThread(
+                threadId,
+                tokenRes.value.data.turns,
+              );
             }
             if (diffRes.status === 'fulfilled' && diffRes.value.data) {
-              store.hydrateTurnDiffsForThread(threadId, diffRes.value.data.turns);
+              store.hydrateTurnDiffsForThread(
+                threadId,
+                diffRes.value.data.turns,
+              );
             }
             if (errorRes.status === 'fulfilled' && errorRes.value.data) {
-              store.hydrateTurnErrorsForThread(threadId, errorRes.value.data.errors);
+              store.hydrateTurnErrorsForThread(
+                threadId,
+                errorRes.value.data.errors,
+              );
             }
           })
           .catch(() =>
@@ -243,11 +362,19 @@ export function useCodexSocket(enabled = true) {
           command: (params.command as string) ?? null,
           cwd: (params.cwd as string) ?? null,
           reason: (params.reason as string) ?? null,
-          availableDecisions: parseAvailableDecisions(params.availableDecisions),
-          proposedExecpolicyAmendment: parseStringArray(params.proposedExecpolicyAmendment),
-          proposedNetworkPolicyAmendments: parseNetworkAmendments(params.proposedNetworkPolicyAmendments),
+          availableDecisions: parseAvailableDecisions(
+            params.availableDecisions,
+          ),
+          proposedExecpolicyAmendment: parseStringArray(
+            params.proposedExecpolicyAmendment,
+          ),
+          proposedNetworkPolicyAmendments: parseNetworkAmendments(
+            params.proposedNetworkPolicyAmendments,
+          ),
         });
-        snackbarMessage = i18n.t('Approval needed in {{thread}}', { thread: title });
+        snackbarMessage = i18n.t('Approval needed in {{thread}}', {
+          thread: title,
+        });
       }
 
       if (method === 'item/fileChange/requestApproval') {
@@ -261,14 +388,18 @@ export function useCodexSocket(enabled = true) {
           reason: (params.reason as string) ?? null,
           grantRoot: (params.grantRoot as string) ?? null,
         });
-        snackbarMessage = i18n.t('Approval needed in {{thread}}', { thread: title });
+        snackbarMessage = i18n.t('Approval needed in {{thread}}', {
+          thread: title,
+        });
       }
 
       if (method === 'item/tool/requestUserInput') {
         const userInputRequest = userInputFromSocket({ id, params });
         if (userInputRequest) {
           store.addUserInputRequestForThread(reqThreadId, userInputRequest);
-          snackbarMessage = i18n.t('Input needed in {{thread}}', { thread: title });
+          snackbarMessage = i18n.t('Input needed in {{thread}}', {
+            thread: title,
+          });
         }
       }
 
