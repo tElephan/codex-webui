@@ -107,6 +107,14 @@ const PINO_REDACT = {
       exclude: ['/api/(.*)'],
       serveStaticOptions: {
         fallthrough: true,
+        setHeaders: (response, filePath) => {
+          if (filePath.includes(join('public', 'assets'))) {
+            response.setHeader(
+              'Cache-Control',
+              'public, max-age=31536000, immutable',
+            );
+          }
+        },
       },
     }),
     AuthModule,

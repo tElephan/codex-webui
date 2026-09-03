@@ -16,6 +16,7 @@ import { ToolCallGroup } from './turn-items/tool-call-group';
 import { ActivityGroup } from './turn-items/command-group';
 import { ApprovalItem } from './turn-items/approval-item';
 import { UserInputCard } from './turn-items/user-input-card';
+import { CollabAgentItem } from './turn-items/collab-agent-item';
 import { TurnTokenFooter } from './turn-token-footer';
 import { PlanPanel } from './plan-panel';
 import { useTimelineStore } from '@/stores/timeline-store';
@@ -144,6 +145,20 @@ function ItemWithRequests({ item }: { item: TurnItem }) {
       return (
         <>
           <FileChangeItem item={item} approval={approval} />
+          {inputCard}
+        </>
+      );
+    case 'collabAgentToolCall':
+      return (
+        <>
+          <CollabAgentItem item={item} />
+          {inputCard}
+        </>
+      );
+    case 'subAgentActivity':
+      return (
+        <>
+          <CollabAgentItem item={item} />
           {inputCard}
         </>
       );

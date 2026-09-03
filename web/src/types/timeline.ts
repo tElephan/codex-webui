@@ -18,7 +18,9 @@ export interface TurnItem {
     | 'agentMessage'
     | 'mcpToolCall'
     | 'commandExecution'
-    | 'fileChange';
+    | 'fileChange'
+    | 'collabAgentToolCall'
+    | 'subAgentActivity';
   itemId: string;
   content: string;
   completed: boolean;
@@ -35,6 +37,36 @@ export interface TurnItem {
   command?: string;
   /** Exit code for commandExecution items. */
   exitCode?: number;
+  /** Collaborative agent operation details. */
+  collabTool?:
+    | 'spawnAgent'
+    | 'sendInput'
+    | 'resumeAgent'
+    | 'wait'
+    | 'closeAgent';
+  collabStatus?: 'inProgress' | 'completed' | 'failed';
+  activityKind?: 'started' | 'interacted' | 'interrupted';
+  agentThreadId?: string;
+  agentPath?: string;
+  senderThreadId?: string;
+  receiverThreadIds?: string[];
+  prompt?: string | null;
+  model?: string | null;
+  reasoningEffort?: string | null;
+  agentsStates?: Record<
+    string,
+    {
+      status:
+        | 'pendingInit'
+        | 'running'
+        | 'interrupted'
+        | 'completed'
+        | 'errored'
+        | 'shutdown'
+        | 'notFound';
+      message: string | null;
+    }
+  >;
 }
 
 /** A user message, system message, or a full AI turn. */
@@ -50,7 +82,12 @@ export type TimelineEntry =
        */
       turnId?: string;
     }
-  | { kind: 'system'; content: string; severity?: 'info' | 'warning' | 'error'; turnId?: string }
+  | {
+      kind: 'system';
+      content: string;
+      severity?: 'info' | 'warning' | 'error';
+      turnId?: string;
+    }
   | {
       kind: 'turn';
       turnId: string;

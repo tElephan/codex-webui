@@ -3,6 +3,8 @@
  * Replaces the old App.tsx conditional rendering.
  */
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useRef,
@@ -19,11 +21,6 @@ import { ChatHeader } from '@/components/chat/chat-header';
 import { ThreadSidebar } from '@/components/chat/thread-sidebar';
 import { SnackbarContainer } from '@/components/snackbar/snackbar-container';
 import { CodexStatusBanner } from '@/components/codex-status-banner';
-import { FilesPanel } from '@/components/files/files-panel';
-import { TerminalRiskGate } from '@/components/terminal/terminal-risk-gate';
-import { TerminalWorkspace } from '@/components/terminal/terminal-workspace';
-import { SettingsPage } from '@/components/settings/settings-page';
-import { IntegrationsPage } from '@/components/integrations/integrations-page';
 import {
   UtilityWindow,
   type UtilityWindowKind,
@@ -57,6 +54,32 @@ import {
   parseNetworkAmendments,
 } from '@/lib/approval-parsers';
 import { userInputFromPending } from '@/lib/user-input-parsers';
+
+const FilesPanel = lazy(() =>
+  import('@/components/files/files-panel').then((module) => ({
+    default: module.FilesPanel,
+  })),
+);
+const TerminalRiskGate = lazy(() =>
+  import('@/components/terminal/terminal-risk-gate').then((module) => ({
+    default: module.TerminalRiskGate,
+  })),
+);
+const TerminalWorkspace = lazy(() =>
+  import('@/components/terminal/terminal-workspace').then((module) => ({
+    default: module.TerminalWorkspace,
+  })),
+);
+const SettingsPage = lazy(() =>
+  import('@/components/settings/settings-page').then((module) => ({
+    default: module.SettingsPage,
+  })),
+);
+const IntegrationsPage = lazy(() =>
+  import('@/components/integrations/integrations-page').then((module) => ({
+    default: module.IntegrationsPage,
+  })),
+);
 
 const MAX_IDLE_SUBSCRIPTIONS_KEY = 'general.maxIdleSubscriptions';
 const DEFAULT_MAX_IDLE_SUBSCRIPTIONS = 30;
@@ -467,6 +490,7 @@ export function AuthenticatedLayout() {
           >
             <ResizablePanel
               id="app-sidebar"
+              className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
               panelRef={desktopSidebarPanelRef}
               minSize="12%"
               maxSize="40%"
@@ -483,7 +507,11 @@ export function AuthenticatedLayout() {
               </aside>
             </ResizablePanel>
             <ResizableHandle withHandle />
-            <ResizablePanel id="app-main" minSize="20%">
+            <ResizablePanel
+              id="app-main"
+              className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+              minSize="20%"
+            >
               {mainContent}
             </ResizablePanel>
           </ResizablePanelGroup>
@@ -509,33 +537,41 @@ export function AuthenticatedLayout() {
           visible={utilityWindow === 'files'}
           onHide={hideUtilityWindow}
         >
-          <FilesPanel />
+          <Suspense fallback={null}>
+            <FilesPanel />
+          </Suspense>
         </PersistentUtilityWindow>
         <PersistentUtilityWindow
           kind="terminal"
           visible={utilityWindow === 'terminal'}
           onHide={hideUtilityWindow}
         >
-          <TerminalRiskGate onCancel={hideUtilityWindow}>
-            <TerminalWorkspace
-              contextKey="global"
-              visible={utilityWindow === 'terminal'}
-            />
-          </TerminalRiskGate>
+          <Suspense fallback={null}>
+            <TerminalRiskGate onCancel={hideUtilityWindow}>
+              <TerminalWorkspace
+                contextKey="global"
+                visible={utilityWindow === 'terminal'}
+              />
+            </TerminalRiskGate>
+          </Suspense>
         </PersistentUtilityWindow>
         <PersistentUtilityWindow
           kind="settings"
           visible={utilityWindow === 'settings'}
           onHide={hideUtilityWindow}
         >
-          <SettingsPage />
+          <Suspense fallback={null}>
+            <SettingsPage />
+          </Suspense>
         </PersistentUtilityWindow>
         <PersistentUtilityWindow
           kind="integrations"
           visible={utilityWindow === 'integrations'}
           onHide={hideUtilityWindow}
         >
-          <IntegrationsPage />
+          <Suspense fallback={null}>
+            <IntegrationsPage />
+          </Suspense>
         </PersistentUtilityWindow>
       </div>
       <SnackbarContainer />

@@ -2,18 +2,22 @@
  * Code/text viewer using Monaco Editor.
  * Uses TanStack Query for file content, Zustand for mtime conflict detection.
  */
-import { useCallback, useRef, useState } from 'react';
-import Editor, { type OnMount } from '@monaco-editor/react';
-import { Code2, Eye, FileWarning, Loader2, RefreshCw, Save } from 'lucide-react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useState } from 'react';
+import Editor from '@monaco-editor/react';
+import {
+  Code2,
+  Eye,
+  FileWarning,
+  Loader2,
+  RefreshCw,
+  Save,
+} from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { MarkdownRenderer } from '@/components/chat/markdown-renderer';
 import { Button } from '@/components/ui/button';
-import {
-  filesReadFileOptions,
-  filesWriteFileMutation,
-  filesReadFileQueryKey,
-} from '@/generated/api/@tanstack/react-query.gen';
+import { filesReadFileOptions } from '@/generated/api/@tanstack/react-query.gen';
+import { useSaveFile } from '@/hooks/use-save-file';
 import { useFilesStore } from '@/stores/files-store';
 
 interface Props {
@@ -23,45 +27,42 @@ interface Props {
 export function CodeViewer({ filePath }: Props) {
   const { t } = useTranslation();
   const fileMtime = useFilesStore((s) => s.fileMtime);
-  const setFileMtime = useFilesStore((s) => s.setFileMtime);
-  const queryClient = useQueryClient();
-  const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
+  const fileEdit = useFilesStore((s) => s.fileEdits[filePath]);
+  const setFileEdit = useFilesStore((s) => s.setFileEdit);
+  const discardFileEdit = useFilesStore((s) => s.discardFileEdit);
   const markdown = isMarkdownFile(filePath);
   const [viewMode, setViewMode] = useState<'preview' | 'source'>(
     markdown ? 'preview' : 'source',
   );
-  const [draft, setDraft] = useState<string | null>(null);
 
-  const { data: fileData, isError, isLoading, refetch } = useQuery({
+  const {
+    data: fileData,
+    isError,
+    isLoading,
+    refetch,
+  } = useQuery({
     ...filesReadFileOptions({ query: { path: filePath } }),
   });
+  const persistedContent = fileData?.content ?? '';
 
-  const writeFile = useMutation({
-    ...filesWriteFileMutation(),
-    onSuccess: (res) => {
-      setFileMtime(res.mtime);
-      void queryClient.invalidateQueries({
-        queryKey: filesReadFileQueryKey({ query: { path: filePath } }),
-      });
-    },
-  });
+  const writeFile = useSaveFile();
 
-  const handleMount: OnMount = (editor) => {
-    editorRef.current = editor;
-  };
+  useEffect(() => {
+    if (fileData && fileEdit?.content === fileData.content) {
+      discardFileEdit(filePath);
+    }
+  }, [discardFileEdit, fileData, fileEdit?.content, filePath]);
 
   const handleSave = useCallback(() => {
-    const value = draft ?? editorRef.current?.getValue();
-    if (value !== undefined) {
-      writeFile.mutate({
-        body: {
-          path: filePath,
-          content: value,
-          expectedMtime: fileMtime ?? undefined,
-        },
-      });
-    }
-  }, [draft, filePath, fileMtime, writeFile]);
+    if (!fileEdit || writeFile.isPending) return;
+    writeFile.mutate({
+      body: {
+        path: filePath,
+        content: fileEdit.content,
+        expectedMtime: fileEdit.expectedMtime ?? undefined,
+      },
+    });
+  }, [fileEdit, filePath, writeFile]);
 
   if (isLoading) {
     return (
@@ -89,7 +90,8 @@ export function CodeViewer({ filePath }: Props) {
 
   const fileName = filePath.split('/').pop() ?? filePath;
   const language = guessLanguage(fileName);
-  const content = draft ?? fileData?.content ?? '';
+  const content = fileEdit?.content ?? persistedContent;
+  const hasUnsavedChanges = Boolean(fileEdit);
   const slash = filePath.lastIndexOf('/');
   const fileDirectory = slash > 0 ? filePath.slice(0, slash) : '/';
 
@@ -123,7 +125,9 @@ export function CodeViewer({ filePath }: Props) {
               {t('Source')}
             </button>
           </div>
-        ) : <span />}
+        ) : (
+          <span />
+        )}
 
         {viewMode === 'source' && (
           <Button
@@ -131,6 +135,7 @@ export function CodeViewer({ filePath }: Props) {
             variant="ghost"
             className="h-6 w-6"
             onClick={handleSave}
+            disabled={!hasUnsavedChanges || writeFile.isPending}
             title={t('Save (Ctrl+S)')}
           >
             <Save className="h-3.5 w-3.5" />
@@ -157,8 +162,9 @@ export function CodeViewer({ filePath }: Props) {
             language={language}
             theme="vs-dark"
             height="100%"
-            onMount={handleMount}
-            onChange={(value) => setDraft(value ?? '')}
+            onChange={(value) =>
+              setFileEdit(filePath, value ?? '', persistedContent, fileMtime)
+            }
             options={{
               readOnly: false,
               minimap: { enabled: false },

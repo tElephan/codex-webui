@@ -3,12 +3,21 @@
  * Desktop: inline tree sidebar (w-56) + viewer.
  * Mobile/Tablet: tree in Sheet overlay, viewer full-width with toggle button.
  */
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { FileCode, FolderOpen, FolderTree, Loader2, X } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
   Dialog,
   DialogContent,
@@ -17,15 +26,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  Sheet,
-  SheetContent,
-  SheetTitle,
-} from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { filesAddRoot, filesGetMetadata } from '@/generated/api';
 import { filesGetRootsQueryKey } from '@/generated/api/@tanstack/react-query.gen';
 import { useBreakpoint } from '@/hooks/use-breakpoint';
+import { useSaveFile } from '@/hooks/use-save-file';
 import { getApiErrorMessage } from '@/lib/api-error';
+import { cn } from '@/lib/utils';
 import { useFilesStore } from '@/stores/files-store';
 import { FileTree } from './file-tree';
 import { FileViewer } from './file-viewer';
@@ -95,9 +102,10 @@ function OpenPathDialog({
         throw new Error(t('Only files and directories can be opened'));
       }
 
-      const rootDir = metadata.type === 'directory'
-        ? metadata.path
-        : getParentDirectory(metadata.path);
+      const rootDir =
+        metadata.type === 'directory'
+          ? metadata.path
+          : getParentDirectory(metadata.path);
       await filesAddRoot({
         body: { root: rootDir },
         throwOnError: true,
@@ -191,11 +199,25 @@ export function FilesPanel() {
   const selectFile = useFilesStore((s) => s.selectFile);
   const selectFileForWindow = useFilesStore((s) => s.selectFileForWindow);
   const closeFileForWindow = useFilesStore((s) => s.closeFileForWindow);
+  const discardFileEdit = useFilesStore((s) => s.discardFileEdit);
   const fileTabs = useFilesStore((s) => s.windowFileTabs);
+  const fileEdits = useFilesStore((s) => s.fileEdits);
+  const closeSave = useSaveFile();
   const breakpoint = useBreakpoint();
   const isDesktop = breakpoint === 'desktop';
   const [treeSheetOpen, setTreeSheetOpen] = useState(false);
   const [directoryDialogOpen, setDirectoryDialogOpen] = useState(false);
+  const [pendingCloseFile, setPendingCloseFile] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (Object.keys(fileEdits).length === 0) return;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [fileEdits]);
   const handleOpenPath = () => {
     // A modal Sheet traps focus while open. Close it before mounting the path
     // dialog so tablet users can focus and type into the input.
@@ -207,8 +229,44 @@ export function FilesPanel() {
     setTreeSheetOpen(false);
   };
 
-  const closeFileTab = (filePath: string) => {
-    closeFileForWindow(filePath);
+  const requestCloseFileTab = (filePath: string) => {
+    if (fileEdits[filePath]) {
+      setPendingCloseFile(filePath);
+    } else {
+      closeFileForWindow(filePath);
+    }
+  };
+
+  const discardAndCloseFileTab = () => {
+    if (!pendingCloseFile) return;
+    discardFileEdit(pendingCloseFile);
+    closeFileForWindow(pendingCloseFile);
+    setPendingCloseFile(null);
+  };
+
+  const saveAndCloseFileTab = () => {
+    if (!pendingCloseFile || closeSave.isPending) return;
+    const edit = fileEdits[pendingCloseFile];
+    if (!edit) {
+      closeFileForWindow(pendingCloseFile);
+      setPendingCloseFile(null);
+      return;
+    }
+    closeSave.mutate(
+      {
+        body: {
+          path: pendingCloseFile,
+          content: edit.content,
+          expectedMtime: edit.expectedMtime ?? undefined,
+        },
+      },
+      {
+        onSuccess: () => {
+          closeFileForWindow(pendingCloseFile);
+          setPendingCloseFile(null);
+        },
+      },
+    );
   };
 
   const fileTabsBar = fileTabs.length > 0 && (
@@ -216,23 +274,37 @@ export function FilesPanel() {
       {fileTabs.map((filePath) => {
         const name = filePath.split('/').pop() ?? filePath;
         const active = selectedFile === filePath;
+        const dirty = Boolean(fileEdits[filePath]);
         return (
           <div
             key={filePath}
-            className={active ? 'flex shrink-0 border-b-2 border-primary' : 'flex shrink-0'}
+            className={cn(
+              'flex shrink-0 border-b-2',
+              active ? 'border-primary' : 'border-transparent',
+            )}
           >
             <button
               type="button"
               onClick={() => selectFile(filePath)}
-              className="flex min-w-0 items-center gap-1.5 pl-3 pr-1 text-xs text-muted-foreground hover:text-foreground"
-              title={filePath}
+              className={cn(
+                'flex min-w-0 items-center gap-1.5 pl-3 pr-1 text-xs text-muted-foreground hover:text-foreground',
+                dirty && 'font-medium text-foreground',
+              )}
+              title={dirty ? `${filePath} — ${t('Unsaved changes')}` : filePath}
             >
               <FileCode className="h-3 w-3 shrink-0" />
               <span className="max-w-48 truncate">{name}</span>
+              {dirty && (
+                <span
+                  className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500"
+                  title={t('Unsaved changes')}
+                  aria-label={t('Unsaved changes')}
+                />
+              )}
             </button>
             <button
               type="button"
-              onClick={() => closeFileTab(filePath)}
+              onClick={() => requestCloseFileTab(filePath)}
               className="px-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
               title={t('Close')}
               aria-label={t('Close')}
@@ -251,6 +323,55 @@ export function FilesPanel() {
     <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
       {t('Select a file to view')}
     </div>
+  );
+
+  const pendingCloseName = pendingCloseFile?.split('/').pop() ?? '';
+  const closeFileDialog = (
+    <AlertDialog
+      open={pendingCloseFile !== null}
+      onOpenChange={(open) => {
+        if (!open && !closeSave.isPending) setPendingCloseFile(null);
+      }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            {t('Save changes before closing?')}
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            {t(
+              "Your changes to {{name}} will be lost if you don't save them.",
+              {
+                name: pendingCloseName,
+              },
+            )}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={closeSave.isPending}>
+            {t('Cancel')}
+          </AlertDialogCancel>
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={closeSave.isPending}
+            onClick={discardAndCloseFileTab}
+          >
+            {t("Don't Save")}
+          </Button>
+          <Button
+            type="button"
+            disabled={closeSave.isPending}
+            onClick={saveAndCloseFileTab}
+          >
+            {closeSave.isPending && (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            )}
+            {t('Save')}
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 
   if (isDesktop) {
@@ -274,6 +395,7 @@ export function FilesPanel() {
             onOpenChange={setDirectoryDialogOpen}
           />
         )}
+        {closeFileDialog}
       </div>
     );
   }
@@ -292,7 +414,9 @@ export function FilesPanel() {
           {t('Explorer')}
         </Button>
         {rootDir && (
-          <span className="truncate text-xs text-muted-foreground/60">{rootDir}</span>
+          <span className="truncate text-xs text-muted-foreground/60">
+            {rootDir}
+          </span>
         )}
         <Button
           size="icon-sm"
@@ -311,7 +435,11 @@ export function FilesPanel() {
       </div>
 
       <Sheet open={treeSheetOpen} onOpenChange={setTreeSheetOpen}>
-        <SheetContent side="left" className="!w-[280px] p-0 sm:!max-w-[320px]" showCloseButton={false}>
+        <SheetContent
+          side="left"
+          className="!w-[280px] p-0 sm:!max-w-[320px]"
+          showCloseButton={false}
+        >
           <SheetTitle className="sr-only">{t('File explorer')}</SheetTitle>
           <div className="flex h-full flex-col bg-muted/20">
             <FileTreeSidebar
@@ -330,6 +458,7 @@ export function FilesPanel() {
           onOpenChange={setDirectoryDialogOpen}
         />
       )}
+      {closeFileDialog}
     </div>
   );
 }

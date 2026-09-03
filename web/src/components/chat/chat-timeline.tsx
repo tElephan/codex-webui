@@ -100,6 +100,7 @@ export function ChatTimeline({ onEditMessage }: Props) {
   const prevCountRef = useRef(timeline.length);
   const shouldAutoScroll = useRef(true);
   const scrollFrameRef = useRef<number | null>(null);
+  const initialScrollThreadRef = useRef<string | null>(null);
 
   // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual known limitation
   const virtualizer = useVirtualizer({
@@ -107,6 +108,10 @@ export function ChatTimeline({ onEditMessage }: Props) {
     getScrollElement: () => scrollRef.current,
     estimateSize: () => 80,
     overscan: 5,
+    // Start at the end when the scroll element is attached after hydration.
+    // Without this, some tablet browsers keep the virtualizer at offset 0
+    // because the first measurement happens before the flex container settles.
+    initialOffset: () => Number.MAX_SAFE_INTEGER,
   });
 
   // Track whether user is near bottom for auto-scroll decisions
@@ -144,15 +149,44 @@ export function ChatTimeline({ onEditMessage }: Props) {
     });
   }, [timeline, virtualizer]);
 
-  // Scroll to bottom on initial load / thread switch
+  // Scroll to the bottom once a thread first has content. Hydration and the
+  // first virtual-item measurements can happen across multiple frames, so
+  // repeat the correction while keeping the normal user-scroll behavior.
   useEffect(() => {
-    if (timeline.length > 0) {
-      shouldAutoScroll.current = true;
-      virtualizer.scrollToIndex(timeline.length - 1, { align: 'end' });
+    if (!threadId) {
+      initialScrollThreadRef.current = null;
+      return;
     }
-    // Only on threadId change
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [threadId]);
+    if (timeline.length === 0 || initialScrollThreadRef.current === threadId) {
+      return;
+    }
+
+    initialScrollThreadRef.current = threadId;
+    shouldAutoScroll.current = true;
+
+    const scrollToBottom = () => {
+      virtualizer.scrollToIndex(timeline.length - 1, { align: 'end' });
+      const element = scrollRef.current;
+      if (element) element.scrollTop = element.scrollHeight;
+    };
+
+    let cancelled = false;
+    const correctAfterFrame = (framesRemaining: number) => {
+      if (cancelled || framesRemaining === 0) return;
+      requestAnimationFrame(() => {
+        if (cancelled) return;
+        scrollToBottom();
+        correctAfterFrame(framesRemaining - 1);
+      });
+    };
+
+    scrollToBottom();
+    correctAfterFrame(2);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [threadId, timeline.length, virtualizer]);
 
   const virtualItems = virtualizer.getVirtualItems();
 

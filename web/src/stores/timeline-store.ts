@@ -96,6 +96,36 @@ function parseTurnItem(item: Record<string, unknown>): TurnItem | null {
         toolName: (item.tool as string) ?? '',
         toolArgs: item.arguments ? JSON.stringify(item.arguments, null, 2) : '',
       };
+    case 'collabAgentToolCall':
+      return {
+        type: 'collabAgentToolCall',
+        itemId: id,
+        content: '',
+        completed: item.status !== 'inProgress',
+        collabTool: item.tool as TurnItem['collabTool'],
+        collabStatus: item.status as TurnItem['collabStatus'],
+        senderThreadId: item.senderThreadId as string | undefined,
+        receiverThreadIds: Array.isArray(item.receiverThreadIds)
+          ? (item.receiverThreadIds as string[])
+          : [],
+        prompt: (item.prompt as string | null) ?? null,
+        model: (item.model as string | null) ?? null,
+        reasoningEffort: (item.reasoningEffort as string | null) ?? null,
+        agentsStates:
+          item.agentsStates && typeof item.agentsStates === 'object'
+            ? (item.agentsStates as TurnItem['agentsStates'])
+            : {},
+      };
+    case 'subAgentActivity':
+      return {
+        type: 'subAgentActivity',
+        itemId: id,
+        content: '',
+        completed: true,
+        activityKind: item.kind as TurnItem['activityKind'],
+        agentThreadId: item.agentThreadId as string | undefined,
+        agentPath: item.agentPath as string | undefined,
+      };
     case 'commandExecution':
       return {
         type: 'commandExecution',

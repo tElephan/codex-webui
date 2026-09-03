@@ -2,6 +2,7 @@
  * TanStack Router configuration with code-based route tree.
  * Auth guard on the root layout redirects unauthenticated users to /login.
  */
+/* eslint-disable react-refresh/only-export-components -- route config owns lazy route wrappers and router exports */
 import {
   createRouter,
   createRoute,
@@ -9,24 +10,68 @@ import {
   redirect,
   Outlet,
 } from '@tanstack/react-router';
+import { lazy, Suspense } from 'react';
 import { getApiToken } from '@/auth-token';
-import { LoginRoute } from './login-route';
-import { AuthenticatedLayout } from './authenticated-layout';
 import { ChatView } from './chat-view';
-import { ThreadView } from './thread-view';
-import { FilesRoute } from './files-route';
-import { TerminalRoute } from './terminal-route';
-import { DiagnosticsRoute } from './diagnostics-route';
-import { SettingsPage } from '@/components/settings/settings-page';
-import { IntegrationsPage } from '@/components/integrations/integrations-page';
 import { BASE_PATH } from '@/base-path';
+
+const LoginRoute = lazy(() =>
+  import('./login-route').then((module) => ({ default: module.LoginRoute })),
+);
+const AuthenticatedLayout = lazy(() =>
+  import('./authenticated-layout').then((module) => ({
+    default: module.AuthenticatedLayout,
+  })),
+);
+const ThreadView = lazy(() =>
+  import('./thread-view').then((module) => ({ default: module.ThreadView })),
+);
+const DiagnosticsRoute = lazy(() =>
+  import('./diagnostics-route').then((module) => ({
+    default: module.DiagnosticsRoute,
+  })),
+);
+
+function LoginRouteComponent() {
+  return (
+    <Suspense fallback={null}>
+      <LoginRoute />
+    </Suspense>
+  );
+}
+
+function AuthenticatedRouteComponent() {
+  return (
+    <Suspense fallback={null}>
+      <AuthenticatedLayout />
+    </Suspense>
+  );
+}
+
+function ThreadRouteComponent() {
+  return (
+    <Suspense fallback={null}>
+      <ThreadView />
+    </Suspense>
+  );
+}
+
+function DiagnosticsRouteComponent() {
+  return (
+    <Suspense fallback={null}>
+      <DiagnosticsRoute />
+    </Suspense>
+  );
+}
 
 export type LoginSearch = { redirect: string };
 export type IntegrationsSearch = { tab: 'plugins' | 'apps' | 'mcps' };
 
 const INTEGRATION_TABS = ['plugins', 'apps', 'mcps'] as const;
 
-function sanitizeIntegrationsSearch(search: Record<string, unknown>): IntegrationsSearch {
+function sanitizeIntegrationsSearch(
+  search: Record<string, unknown>,
+): IntegrationsSearch {
   const tab = search.tab;
   return {
     tab: INTEGRATION_TABS.includes(tab as IntegrationsSearch['tab'])
@@ -60,7 +105,7 @@ const loginRoute = createRoute({
       throw redirect({ to: search.redirect });
     }
   },
-  component: LoginRoute,
+  component: LoginRouteComponent,
 });
 
 /** Authenticated layout — sidebar + header + outlet. */
@@ -75,7 +120,7 @@ const authenticatedRoute = createRoute({
       });
     }
   },
-  component: AuthenticatedLayout,
+  component: AuthenticatedRouteComponent,
 });
 
 /** Index route — empty chat state (no thread selected). */
@@ -89,35 +134,32 @@ const indexRoute = createRoute({
 export const threadRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: '/t/$threadId',
-  component: ThreadView,
+  component: ThreadRouteComponent,
 });
 
 /** Global files view. */
 const filesRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: '/files',
-  component: FilesRoute,
 });
 
 /** Global terminal view. */
 const terminalRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: '/terminal',
-  component: TerminalRoute,
 });
 
 /** Diagnostics panel. */
 const diagnosticsRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: '/diagnostics',
-  component: DiagnosticsRoute,
+  component: DiagnosticsRouteComponent,
 });
 
 /** Settings page. */
 const settingsRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: '/settings',
-  component: SettingsPage,
 });
 
 /** Integrations page (plugins, apps, MCPs). */
@@ -125,7 +167,6 @@ const integrationsRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: '/integrations',
   validateSearch: sanitizeIntegrationsSearch,
-  component: IntegrationsPage,
 });
 
 const routeTree = rootRoute.addChildren([

@@ -241,20 +241,30 @@ export function ThreadView() {
       {showPanel && isDesktop ? (
         /* Keep one panel instance mounted so full-screen toggles preserve viewer state. */
         <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
-          <ResizablePanel defaultSize="65%" minSize="20%">
+          <ResizablePanel
+            className="flex min-h-0 flex-col overflow-hidden"
+            defaultSize="65%"
+            minSize="20%"
+          >
             <div className="flex h-full flex-col">
               <ChatTimeline
+                key={threadId}
                 onEditMessage={(v) => chatInputRef.current?.setInput(v)}
               />
             </div>
           </ResizablePanel>
           <ResizableHandle withHandle />
-          <ResizablePanel defaultSize="35%" minSize="15%">
+          <ResizablePanel
+            className="flex min-h-0 flex-col overflow-hidden"
+            defaultSize="35%"
+            minSize="15%"
+          >
             <div className="flex h-full flex-col">{sessionPanelContent}</div>
           </ResizablePanel>
         </ResizablePanelGroup>
       ) : (
         <ChatTimeline
+          key={threadId}
           onEditMessage={(v) => chatInputRef.current?.setInput(v)}
         />
       )}

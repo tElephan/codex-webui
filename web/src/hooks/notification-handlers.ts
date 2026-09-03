@@ -12,7 +12,10 @@ import {
   mcpServersListServersQueryKey,
   threadsListThreadsQueryKey,
 } from '@/generated/api/@tanstack/react-query.gen';
-import type { FileUpdateChangeDto, RateLimitSnapshotDto } from '@/generated/api';
+import type {
+  FileUpdateChangeDto,
+  RateLimitSnapshotDto,
+} from '@/generated/api';
 import {
   invalidateBranchTreesSoon,
   invalidateThreadListSoon,
@@ -21,9 +24,16 @@ import { useAccountStore } from '@/stores/account-store';
 import { useMcpStore } from '@/stores/mcp-store';
 import { showSnackbar } from '@/stores/snackbar-store';
 import type { AuthMode, PlanType } from '@/types/account';
-import type { ThreadTokenUsage, ThreadStatusType } from '@/types/codex-notifications';
+import type {
+  ThreadTokenUsage,
+  ThreadStatusType,
+} from '@/types/codex-notifications';
 import type { McpServerStartupState } from '@/types/mcp';
-import type { TurnItem, TurnPlanState, TurnPlanStepStatus } from '@/types/timeline';
+import type {
+  TurnItem,
+  TurnPlanState,
+  TurnPlanStepStatus,
+} from '@/types/timeline';
 import type { ApprovalRequest } from '@/types/approval';
 import i18n from '@/i18n';
 
@@ -49,16 +59,17 @@ export interface NotificationContext {
     updater: (existing: TurnItem | undefined) => TurnItem,
   ) => void;
   updateTurnDiff: (turnId: string, diff: string) => void;
-  updateTurnPlan: (
-    turnId: string,
-    plan: TurnPlanState,
-  ) => void;
+  updateTurnPlan: (turnId: string, plan: TurnPlanState) => void;
   appendPlanDelta: (turnId: string, itemId: string, delta: string) => void;
   setLoading: (loading: boolean) => void;
   expandReasoning: (itemId: string) => void;
   collapseReasoning: (itemId: string) => void;
   addApproval: (approval: ApprovalRequest) => void;
-  addSystemMessage: (message: string, severity?: 'info' | 'warning' | 'error', turnId?: string) => void;
+  addSystemMessage: (
+    message: string,
+    severity?: 'info' | 'warning' | 'error',
+    turnId?: string,
+  ) => void;
   addSystemError: (message: string) => void;
   setTokenUsage: (turnId: string, usage: ThreadTokenUsage) => void;
   setThreadStatus: (status: ThreadStatusType | null) => void;
@@ -103,7 +114,11 @@ function isDuplicateRetryError(key: string): boolean {
 }
 
 /** Returns true only on first call per unique error — deduplicates error + turn/completed. */
-function shouldRecordFinalError(threadId: string | undefined, turnId: string | undefined, message: string): boolean {
+function shouldRecordFinalError(
+  threadId: string | undefined,
+  turnId: string | undefined,
+  message: string,
+): boolean {
   const key = `${threadId ?? ''}:${turnId ?? ''}:${message}`;
   if (finalErrorEntries.has(key)) return false;
   if (finalErrorEntries.size >= MAX_FINAL_ERROR_ENTRIES) {
@@ -114,19 +129,23 @@ function shouldRecordFinalError(threadId: string | undefined, turnId: string | u
   return true;
 }
 
-
 let invalidateMcpTimer: ReturnType<typeof setTimeout> | null = null;
 
 function debouncedInvalidateMcpServers(queryClient: QueryClient): void {
   if (invalidateMcpTimer) clearTimeout(invalidateMcpTimer);
   invalidateMcpTimer = setTimeout(() => {
-    void queryClient.invalidateQueries({ queryKey: mcpServersListServersQueryKey() });
+    void queryClient.invalidateQueries({
+      queryKey: mcpServersListServersQueryKey(),
+    });
     invalidateMcpTimer = null;
   }, 500);
 }
 
 /** Matches generated TanStack Query keys whose first element has `{ _id: id }`. */
-function queryHasId(query: { queryKey: readonly unknown[] }, id: string): boolean {
+function queryHasId(
+  query: { queryKey: readonly unknown[] },
+  id: string,
+): boolean {
   const first = query.queryKey[0];
   return (
     typeof first === 'object' &&
@@ -137,13 +156,60 @@ function queryHasId(query: { queryKey: readonly unknown[] }, id: string): boolea
 }
 
 function invalidateAccountQueries(queryClient: QueryClient): void {
-  void queryClient.invalidateQueries({ queryKey: accountReadAccountQueryKey() });
-  void queryClient.invalidateQueries({ queryKey: accountReadRateLimitsQueryKey() });
-  void queryClient.invalidateQueries({ queryKey: codexStatusGetStatusQueryKey() });
+  void queryClient.invalidateQueries({
+    queryKey: accountReadAccountQueryKey(),
+  });
+  void queryClient.invalidateQueries({
+    queryKey: accountReadRateLimitsQueryKey(),
+  });
+  void queryClient.invalidateQueries({
+    queryKey: codexStatusGetStatusQueryKey(),
+  });
 }
 
 function isPlanStepStatus(value: unknown): value is TurnPlanStepStatus {
   return value === 'pending' || value === 'inProgress' || value === 'completed';
+}
+
+function collabAgentItemFromPayload(
+  item: Record<string, unknown>,
+  itemId: string,
+  completed: boolean,
+): TurnItem {
+  return {
+    type: 'collabAgentToolCall',
+    itemId,
+    content: '',
+    completed,
+    collabTool: item.tool as TurnItem['collabTool'],
+    collabStatus: item.status as TurnItem['collabStatus'],
+    senderThreadId: item.senderThreadId as string | undefined,
+    receiverThreadIds: Array.isArray(item.receiverThreadIds)
+      ? (item.receiverThreadIds as string[])
+      : [],
+    prompt: (item.prompt as string | null) ?? null,
+    model: (item.model as string | null) ?? null,
+    reasoningEffort: (item.reasoningEffort as string | null) ?? null,
+    agentsStates:
+      item.agentsStates && typeof item.agentsStates === 'object'
+        ? (item.agentsStates as TurnItem['agentsStates'])
+        : {},
+  };
+}
+
+function subAgentActivityFromPayload(
+  item: Record<string, unknown>,
+  itemId: string,
+): TurnItem {
+  return {
+    type: 'subAgentActivity',
+    itemId,
+    content: '',
+    completed: true,
+    activityKind: item.kind as TurnItem['activityKind'],
+    agentThreadId: item.agentThreadId as string | undefined,
+    agentPath: item.agentPath as string | undefined,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -151,7 +217,11 @@ function isPlanStepStatus(value: unknown): value is TurnPlanStepStatus {
 // ---------------------------------------------------------------------------
 
 const handleReasoningSummaryTextDelta: Handler = (params, ctx) => {
-  const { turnId, itemId, delta } = params as { turnId?: string; itemId?: string; delta?: string };
+  const { turnId, itemId, delta } = params as {
+    turnId?: string;
+    itemId?: string;
+    delta?: string;
+  };
   if (!turnId || !itemId || !hasThreadScope(params, ctx)) return;
   ctx.updateTurnItem(turnId, itemId, (existing) => ({
     type: 'reasoning',
@@ -163,7 +233,11 @@ const handleReasoningSummaryTextDelta: Handler = (params, ctx) => {
 };
 
 const handleAgentMessageDelta: Handler = (params, ctx) => {
-  const { turnId, itemId, delta } = params as { turnId?: string; itemId?: string; delta?: string };
+  const { turnId, itemId, delta } = params as {
+    turnId?: string;
+    itemId?: string;
+    delta?: string;
+  };
   if (!turnId || !itemId || !hasThreadScope(params, ctx)) return;
   ctx.updateTurnItem(turnId, itemId, (existing) => ({
     type: 'agentMessage',
@@ -174,7 +248,11 @@ const handleAgentMessageDelta: Handler = (params, ctx) => {
 };
 
 const handleCommandExecutionOutputDelta: Handler = (params, ctx) => {
-  const { turnId, itemId, delta } = params as { turnId?: string; itemId?: string; delta?: string };
+  const { turnId, itemId, delta } = params as {
+    turnId?: string;
+    itemId?: string;
+    delta?: string;
+  };
   if (!turnId || !itemId || !hasThreadScope(params, ctx)) return;
   ctx.updateTurnItem(turnId, itemId, (existing) => ({
     ...(existing ?? { type: 'commandExecution' as const, itemId }),
@@ -184,7 +262,11 @@ const handleCommandExecutionOutputDelta: Handler = (params, ctx) => {
 };
 
 const handleFileChangeOutputDelta: Handler = (params, ctx) => {
-  const { turnId, itemId, delta } = params as { turnId?: string; itemId?: string; delta?: string };
+  const { turnId, itemId, delta } = params as {
+    turnId?: string;
+    itemId?: string;
+    delta?: string;
+  };
   if (!turnId || !itemId || !hasThreadScope(params, ctx)) return;
   ctx.updateTurnItem(turnId, itemId, (existing) => ({
     ...(existing ?? { type: 'fileChange' as const, itemId }),
@@ -196,7 +278,8 @@ const handleFileChangeOutputDelta: Handler = (params, ctx) => {
 const handleTurnDiffUpdated: Handler = (params, ctx) => {
   const { turnId } = params as { turnId?: string };
   const diff = params.diff as string | undefined;
-  if (!turnId || typeof diff !== 'string' || !hasThreadScope(params, ctx)) return;
+  if (!turnId || typeof diff !== 'string' || !hasThreadScope(params, ctx))
+    return;
   ctx.updateTurnDiff(turnId, diff);
 };
 
@@ -238,6 +321,14 @@ const handleItemStarted: Handler = (params, ctx) => {
       command: (item.command as string) ?? '',
     }));
   }
+  if (item.type === 'collabAgentToolCall') {
+    ctx.updateTurnItem(turnId, id, () =>
+      collabAgentItemFromPayload(item, id, false),
+    );
+  }
+  if (item.type === 'subAgentActivity') {
+    ctx.updateTurnItem(turnId, id, () => subAgentActivityFromPayload(item, id));
+  }
 };
 
 const handleItemCompleted: Handler = (params, ctx) => {
@@ -257,14 +348,22 @@ const handleItemCompleted: Handler = (params, ctx) => {
   }
   if (item.type === 'reasoning') {
     ctx.updateTurnItem(turnId, completedItemId, (existing) => ({
-      ...(existing ?? { type: 'reasoning' as const, itemId: completedItemId, content: '' }),
+      ...(existing ?? {
+        type: 'reasoning' as const,
+        itemId: completedItemId,
+        content: '',
+      }),
       completed: true,
     }));
     ctx.collapseReasoning(completedItemId);
   }
   if (item.type === 'commandExecution') {
     ctx.updateTurnItem(turnId, completedItemId, (existing) => ({
-      ...(existing ?? { type: 'commandExecution' as const, itemId: completedItemId, content: '' }),
+      ...(existing ?? {
+        type: 'commandExecution' as const,
+        itemId: completedItemId,
+        content: '',
+      }),
       content: (item.aggregatedOutput as string) || existing?.content || '',
       command: (item.command as string) || existing?.command,
       exitCode: (item.exitCode as number) ?? existing?.exitCode,
@@ -299,6 +398,38 @@ const handleItemCompleted: Handler = (params, ctx) => {
       fileDiff: firstChange?.diff || existing?.fileDiff || '',
     }));
   }
+  if (item.type === 'collabAgentToolCall') {
+    ctx.updateTurnItem(turnId, completedItemId, (existing) => ({
+      ...collabAgentItemFromPayload(item, completedItemId, true),
+      ...(existing?.type === 'collabAgentToolCall' ? existing : {}),
+      completed: true,
+      collabStatus:
+        (item.status as TurnItem['collabStatus']) ??
+        existing?.collabStatus ??
+        'completed',
+      collabTool: (item.tool as TurnItem['collabTool']) ?? existing?.collabTool,
+      senderThreadId:
+        (item.senderThreadId as string | undefined) ?? existing?.senderThreadId,
+      receiverThreadIds: Array.isArray(item.receiverThreadIds)
+        ? (item.receiverThreadIds as string[])
+        : (existing?.receiverThreadIds ?? []),
+      prompt: (item.prompt as string | null) ?? existing?.prompt ?? null,
+      model: (item.model as string | null) ?? existing?.model ?? null,
+      reasoningEffort:
+        (item.reasoningEffort as string | null) ??
+        existing?.reasoningEffort ??
+        null,
+      agentsStates:
+        item.agentsStates && typeof item.agentsStates === 'object'
+          ? (item.agentsStates as TurnItem['agentsStates'])
+          : (existing?.agentsStates ?? {}),
+    }));
+  }
+  if (item.type === 'subAgentActivity') {
+    ctx.updateTurnItem(turnId, completedItemId, () =>
+      subAgentActivityFromPayload(item, completedItemId),
+    );
+  }
 };
 
 /** turn/completed payload is { threadId, turn: { id, status, error } }. */
@@ -311,7 +442,9 @@ const handleTurnCompleted: Handler = (params, ctx) => {
 
   if (!hasThreadScope(params, ctx)) {
     // Still invalidate thread list for non-active threads
-    void ctx.queryClient.invalidateQueries({ queryKey: threadsListThreadsQueryKey() });
+    void ctx.queryClient.invalidateQueries({
+      queryKey: threadsListThreadsQueryKey(),
+    });
     return;
   }
 
@@ -322,12 +455,18 @@ const handleTurnCompleted: Handler = (params, ctx) => {
   if (
     turn?.status === 'failed' &&
     turn.error?.message &&
-    shouldRecordFinalError(params.threadId as string | undefined, turnId, turn.error.message)
+    shouldRecordFinalError(
+      params.threadId as string | undefined,
+      turnId,
+      turn.error.message,
+    )
   ) {
     ctx.addSystemMessage(`Error: ${turn.error.message}`, 'error', turnId);
   }
 
-  void ctx.queryClient.invalidateQueries({ queryKey: threadsListThreadsQueryKey() });
+  void ctx.queryClient.invalidateQueries({
+    queryKey: threadsListThreadsQueryKey(),
+  });
 };
 
 // ---------------------------------------------------------------------------
@@ -335,7 +474,9 @@ const handleTurnCompleted: Handler = (params, ctx) => {
 // ---------------------------------------------------------------------------
 
 const handleError: Handler = (params, ctx) => {
-  const error = params.error as { message?: string; additionalDetails?: string } | undefined;
+  const error = params.error as
+    | { message?: string; additionalDetails?: string }
+    | undefined;
   const willRetry = params.willRetry as boolean;
   const turnId = params.turnId as string | undefined;
   const threadId = params.threadId as string | undefined;
@@ -397,7 +538,8 @@ const handleTurnPlanUpdated: Handler = (params, ctx) => {
     )
     .map((step) => ({ step: step.step, status: step.status }));
   ctx.updateTurnPlan(turnId, {
-    explanation: typeof params.explanation === 'string' ? params.explanation : null,
+    explanation:
+      typeof params.explanation === 'string' ? params.explanation : null,
     steps,
   });
 };
@@ -463,7 +605,10 @@ const handleThreadStatusChanged: Handler = (params, ctx) => {
   if (ctx.threadId === threadId) {
     ctx.setThreadStatus(status);
     if (status.type === 'systemError') {
-      ctx.addSystemMessage(i18n.t('Thread encountered a system error'), 'error');
+      ctx.addSystemMessage(
+        i18n.t('Thread encountered a system error'),
+        'error',
+      );
     }
   }
   invalidateThreadListSoon(ctx.queryClient);
@@ -582,7 +727,9 @@ const handleAccountRateLimitsUpdated: Handler = (params, ctx) => {
   const rateLimits = params.rateLimits as RateLimitSnapshotDto | undefined;
   if (!rateLimits) return;
   useAccountStore.getState().setRateLimitSnapshot(rateLimits);
-  void ctx.queryClient.invalidateQueries({ queryKey: accountReadRateLimitsQueryKey() });
+  void ctx.queryClient.invalidateQueries({
+    queryKey: accountReadRateLimitsQueryKey(),
+  });
 };
 
 const handleSkillsChanged: Handler = (_params, ctx) => {
@@ -598,19 +745,29 @@ const handleAppListUpdated: Handler = (_params, ctx) => {
 
 /** Refresh MCP status and show toast after OAuth login completes. */
 const handleMcpOauthLoginCompleted: Handler = (params, ctx) => {
-  void ctx.queryClient.invalidateQueries({ queryKey: mcpServersListServersQueryKey() });
+  void ctx.queryClient.invalidateQueries({
+    queryKey: mcpServersListServersQueryKey(),
+  });
   const name = typeof params.name === 'string' ? params.name : 'MCP server';
   const success = params.success === true;
   if (success) {
     showSnackbar(i18n.t('{{name}} login completed', { name }), 'success');
   } else {
     const error = typeof params.error === 'string' ? params.error : '';
-    showSnackbar(i18n.t('{{name}} login failed: {{error}}', { name, error }), 'error');
+    showSnackbar(
+      i18n.t('{{name}} login failed: {{error}}', { name, error }),
+      'error',
+    );
   }
 };
 
 function isMcpStartupStatus(value: unknown): value is McpServerStartupState {
-  return value === 'starting' || value === 'ready' || value === 'failed' || value === 'cancelled';
+  return (
+    value === 'starting' ||
+    value === 'ready' ||
+    value === 'failed' ||
+    value === 'cancelled'
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -657,11 +814,11 @@ const HANDLERS: Record<string, Handler> = {
   'turn/completed': handleTurnCompleted,
 
   // Tier 1 — high value
-  'error': handleError,
+  error: handleError,
   'thread/tokenUsage/updated': handleTokenUsageUpdated,
   'serverRequest/resolved': handleServerRequestResolved,
-  'configWarning': handleConfigWarning,
-  'deprecationNotice': handleDeprecationNotice,
+  configWarning: handleConfigWarning,
+  deprecationNotice: handleDeprecationNotice,
   'turn/plan/updated': handleTurnPlanUpdated,
   'item/plan/delta': handlePlanDelta,
   'item/mcpToolCall/progress': handleMcpToolCallProgress,
