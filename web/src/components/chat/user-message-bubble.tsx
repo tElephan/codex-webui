@@ -2,10 +2,13 @@
  * User message bubble with markdown rendering, clickable @mentions, and image badges.
  * Uses react-markdown + remark-gfm + custom remark-mentions plugin.
  */
-import { useMemo, type ComponentProps } from 'react';
+import { useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import Markdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { FileText, ImageIcon } from 'lucide-react';
+import { Check, FileText, ImageIcon, Loader2, X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 import { openFileInPanel } from '@/lib/local-file-link';
 import { remarkMentions } from '@/lib/remark-mentions';
 import { normalizeMessageMentions } from '@/lib/mention-utils';
@@ -14,6 +17,10 @@ interface Props {
   content: string;
   threadCwd: string | null;
   images?: string[];
+  editing?: boolean;
+  editPending?: boolean;
+  onCancelEdit?: () => void;
+  onSaveEdit?: (content: string) => void;
 }
 
 /** Allow `mention:` scheme through react-markdown's URL sanitizer. */
@@ -86,7 +93,44 @@ const userComponents: ComponentProps<typeof Markdown>['components'] = {
   hr: () => <hr className="my-3 border-white/20" />,
 };
 
-export function UserMessageBubble({ content, threadCwd, images }: Props) {
+export function UserMessageBubble({
+  content,
+  threadCwd,
+  images,
+  editing = false,
+  editPending = false,
+  onCancelEdit,
+  onSaveEdit,
+}: Props) {
+  const { t } = useTranslation();
+  const [editContent, setEditContent] = useState(content);
+  const editTextareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!editing) return;
+    const frame = requestAnimationFrame(() => {
+      setEditContent(content);
+      editTextareaRef.current?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [content, editing]);
+
+  const saveEdit = () => {
+    if (editPending || editContent.trim().length === 0) return;
+    onSaveEdit?.(editContent);
+  };
+
+  const handleEditKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.nativeEvent.isComposing) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      onCancelEdit?.();
+    } else if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      saveEdit();
+    }
+  };
+
   // Normalize absolute @mentions to relative before rendering
   const normalizedContent = useMemo(
     () => normalizeMessageMentions(content, threadCwd),
@@ -104,9 +148,51 @@ export function UserMessageBubble({ content, threadCwd, images }: Props) {
 
   return (
     <div className="text-sm leading-relaxed [overflow-wrap:break-word]">
-      <Markdown remarkPlugins={remarkPlugins} components={userComponents} urlTransform={userUrlTransform}>
-        {normalizedContent}
-      </Markdown>
+      {editing ? (
+        <div className="space-y-2">
+          <Textarea
+            ref={editTextareaRef}
+            value={editContent}
+            onChange={(event) => setEditContent(event.target.value)}
+            onKeyDown={handleEditKeyDown}
+            disabled={editPending}
+            aria-label={t('Edit message')}
+            className="min-h-20 resize-y border-white/30 bg-white text-slate-900 placeholder:text-slate-500 focus-visible:border-white focus-visible:ring-white/40 dark:bg-white"
+          />
+          <div className="flex justify-end gap-1">
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={editPending}
+              aria-label={t('Cancel editing')}
+              title={t('Cancel editing')}
+              onClick={onCancelEdit}
+              className="text-white hover:bg-white/15 hover:text-white"
+            >
+              <X />
+              <span className="sr-only">{t('Cancel editing')}</span>
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={editPending || editContent.trim().length === 0}
+              aria-label={t('Save message')}
+              title={t('Save message')}
+              onClick={saveEdit}
+              className="text-white hover:bg-white/15 hover:text-white"
+            >
+              {editPending ? <Loader2 className="animate-spin" /> : <Check />}
+              <span className="sr-only">{t('Save message')}</span>
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <Markdown remarkPlugins={remarkPlugins} components={userComponents} urlTransform={userUrlTransform}>
+          {normalizedContent}
+        </Markdown>
+      )}
 
       {imageFiles && imageFiles.length > 0 && (
         <div className="mt-1.5 flex flex-wrap gap-1.5">

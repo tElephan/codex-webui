@@ -74,6 +74,7 @@ function followUpLabel(text: string): string {
 /** Imperative handle exposed via ref for external input manipulation. */
 export interface ChatInputHandle {
   setInput: (value: string) => void;
+  sendInput: (value: string) => void;
   addFileAttachment: (displayName: string, absolutePath: string) => void;
 }
 
@@ -100,6 +101,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
     [setDraft, threadId],
   );
   const valueRef = useRef(value);
+  const pendingExternalSendRef = useRef<string | null>(null);
   const [followUpMenuOpen, setFollowUpMenuOpen] = useState(false);
   useEffect(() => {
     valueRef.current = value;
@@ -197,16 +199,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
     setAttachments,
     toRelativePath,
   });
-
-  // ── Imperative handle ────────────────────────────────────
-  useImperativeHandle(
-    ref,
-    () => ({
-      setInput: setValue,
-      addFileAttachment: addFileMention,
-    }),
-    [addFileMention, setValue],
-  );
 
   // ── Turn mutations ───────────────────────────────────────
   const queryClient = useQueryClient();
@@ -467,6 +459,43 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
     }
     handleSend();
   }, [canSteer, handleQueue, handleSend, handleSteer, hasActiveTurn]);
+
+  const sendExternalInput = useCallback(
+    (text: string) => {
+      if (!threadId || text.trim().length === 0) return;
+      pendingExternalSendRef.current = text;
+      setDraft(threadId, text);
+    },
+    [setDraft, threadId],
+  );
+
+  // Inline message editing navigates to a newly forked thread first. Wait for
+  // that thread's draft and loading state to settle before submitting the edit.
+  useEffect(() => {
+    const pending = pendingExternalSendRef.current;
+    if (
+      pending === null ||
+      !threadId ||
+      value !== pending ||
+      loading ||
+      inputDisabled
+    ) {
+      return;
+    }
+    pendingExternalSendRef.current = null;
+    handleSend();
+  }, [handleSend, inputDisabled, loading, threadId, value]);
+
+  // ── Imperative handle ────────────────────────────────────
+  useImperativeHandle(
+    ref,
+    () => ({
+      setInput: setValue,
+      sendInput: sendExternalInput,
+      addFileAttachment: addFileMention,
+    }),
+    [addFileMention, sendExternalInput, setValue],
+  );
 
   // ── Input handlers ───────────────────────────────────────
   const handleChange = useCallback(

@@ -232,6 +232,8 @@
   "Thread is active in another Codex client": "会话正在另一个 Codex 客户端中运行",
   "Continue in a branch": "在新分支中继续",
   "Edit this message": "编辑此条消息",
+  "Edit message": "编辑消息",
+  "Save message": "保存消息",
   "Edit this message?": "编辑此条消息？",
   "This creates a new version of the message. The current conversation is kept as a sibling version you can switch back to. File changes will NOT be reverted.": "这会创建该消息的新版本。当前对话会作为可切回的同级版本保留。文件变更不会被还原。",
   "Could not create a new version of this message.": "无法创建该消息的新版本。",

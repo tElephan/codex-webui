@@ -249,7 +249,7 @@ export function ThreadView() {
             <div className="flex h-full flex-col">
               <ChatTimeline
                 key={threadId}
-                onEditMessage={(v) => chatInputRef.current?.setInput(v)}
+                onEditMessage={(v) => chatInputRef.current?.sendInput(v)}
               />
             </div>
           </ResizablePanel>
@@ -265,7 +265,7 @@ export function ThreadView() {
       ) : (
         <ChatTimeline
           key={threadId}
-          onEditMessage={(v) => chatInputRef.current?.setInput(v)}
+          onEditMessage={(v) => chatInputRef.current?.sendInput(v)}
         />
       )}
 

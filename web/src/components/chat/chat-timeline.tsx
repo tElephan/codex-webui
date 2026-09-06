@@ -8,16 +8,6 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { Bot, Loader2, Pencil } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -59,10 +49,7 @@ export function ChatTimeline({ onEditMessage }: Props) {
   const threadCwd = useTimelineStore((s) => s.threadCwd);
   const threadMode = useTimelineStore((s) => s.threadMode);
   const loading = useTimelineStore((s) => s.loading);
-  const [editTarget, setEditTarget] = useState<{
-    turnId: string;
-    content: string;
-  } | null>(null);
+  const [editingTurnId, setEditingTurnId] = useState<string | null>(null);
 
   const { versionsByTurnId } = useMessageVersions(threadId);
   const adoptionStatus = useBranchAdoptionStatus();
@@ -87,7 +74,7 @@ export function ChatTimeline({ onEditMessage }: Props) {
         : null,
   });
   const createBranch = useCreateMessageBranch((text) => {
-    setEditTarget(null);
+    setEditingTurnId(null);
     if (text) onEditMessage?.(text);
   });
 
@@ -253,7 +240,17 @@ export function ChatTimeline({ onEditMessage }: Props) {
                     onDeleteVersion={(threadId, siblingThreadIds) =>
                       setDeleteTarget({ threadId, siblingThreadIds })
                     }
-                    onEdit={setEditTarget}
+                    editingTurnId={editingTurnId}
+                    editPending={createBranch.isPending}
+                    onEdit={(turnId) => setEditingTurnId(turnId)}
+                    onCancelEdit={() => setEditingTurnId(null)}
+                    onSaveEdit={(turnId, content) => {
+                      if (!threadId) return;
+                      createBranch.mutate({
+                        path: { threadId },
+                        body: { editedTurnId: turnId, previewText: content },
+                      });
+                    }}
                     t={t}
                   />
                 </div>
@@ -262,35 +259,6 @@ export function ChatTimeline({ onEditMessage }: Props) {
           </div>
         </div>
       </div>
-
-      <AlertDialog open={editTarget !== null} onOpenChange={(open) => !open && setEditTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('Edit this message?')}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t('This creates a new version of the message. The current conversation is kept as a sibling version you can switch back to. File changes will NOT be reverted.')}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t('Cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={createBranch.isPending}
-              onClick={() => {
-                if (!threadId || !editTarget) return;
-                createBranch.mutate({
-                  path: { threadId },
-                  body: {
-                    editedTurnId: editTarget.turnId,
-                    previewText: editTarget.content,
-                  },
-                });
-              }}
-            >
-              {t('Confirm')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       <DeleteConversationDialog
         open={deleteTarget !== null}
@@ -321,7 +289,11 @@ function TimelineEntryRow({
   versionsByTurnId,
   deleteBlockedReason,
   onDeleteVersion,
+  editingTurnId,
+  editPending,
   onEdit,
+  onCancelEdit,
+  onSaveEdit,
   t,
 }: {
   entry: TimelineEntry;
@@ -330,7 +302,11 @@ function TimelineEntryRow({
   versionsByTurnId: Map<string, MessageVersions>;
   deleteBlockedReason: string | null;
   onDeleteVersion: (threadId: string, siblingThreadIds: string[]) => void;
-  onEdit: (target: { turnId: string; content: string }) => void;
+  editingTurnId: string | null;
+  editPending: boolean;
+  onEdit: (turnId: string) => void;
+  onCancelEdit: () => void;
+  onSaveEdit: (turnId: string, content: string) => void;
   t: (key: string) => string;
 }) {
   if (entry.kind === 'user') {
@@ -345,7 +321,15 @@ function TimelineEntryRow({
               '0 8px 24px rgba(59, 130, 246, 0.20), inset 0 1px 0 rgba(255, 255, 255, 0.18), inset 0 -1px 0 rgba(0, 0, 0, 0.12)',
           }}
         >
-          <UserMessageBubble content={entry.content} threadCwd={threadCwd} images={entry.images} />
+          <UserMessageBubble
+            content={entry.content}
+            threadCwd={threadCwd}
+            images={entry.images}
+            editing={editingTurnId === turnId}
+            editPending={editPending}
+            onCancelEdit={onCancelEdit}
+            onSaveEdit={turnId ? (content) => onSaveEdit(turnId, content) : undefined}
+          />
         </div>
         {/* Reserved even when empty so revealing the controls cannot shift layout. */}
         <div className="mt-1 flex h-6 items-center gap-1 opacity-100 transition-opacity [@media(min-width:768px)_and_(hover:hover)_and_(pointer:fine)]:opacity-0 [@media(min-width:768px)_and_(hover:hover)_and_(pointer:fine)]:focus-within:opacity-100 [@media(min-width:768px)_and_(hover:hover)_and_(pointer:fine)]:group-hover/user:opacity-100">
@@ -366,7 +350,7 @@ function TimelineEntryRow({
                   aria-label={t('Edit this message')}
                   disabled={!canBranch}
                   className="flex cursor-pointer items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
-                  onClick={() => onEdit({ turnId, content: entry.content })}
+                  onClick={() => onEdit(turnId)}
                 >
                   <Pencil className="h-3 w-3" />
                 </button>

@@ -93,9 +93,8 @@ export function useMessageVersions(threadId: string | null): {
 /**
  * Creates a new version of a user message by forking before its turn.
  *
- * On success the caller is moved to the fresh branch and the original text is
- * handed back so it can be pre-filled for editing. The branch stays empty until
- * that edited message is actually sent.
+ * On success the caller is moved to the fresh branch and the edited text is
+ * handed back so the caller can submit it on the new branch.
  */
 export function useCreateMessageBranch(onBranchReady: (text: string) => void) {
   const navigate = useNavigate();
@@ -104,7 +103,7 @@ export function useCreateMessageBranch(onBranchReady: (text: string) => void) {
 
   return useMutation({
     ...threadsCreateMessageBranchMutation(),
-    onSuccess: (res, vars) => {
+    onSuccess: async (res, vars) => {
       const childThreadId = res.fork.thread.id;
       void queryClient.invalidateQueries({
         queryKey: threadsReadBranchTreeQueryKey({
@@ -117,7 +116,7 @@ export function useCreateMessageBranch(onBranchReady: (text: string) => void) {
       void queryClient.invalidateQueries({
         queryKey: threadsListThreadsQueryKey(),
       });
-      void navigate({ to: '/t/$threadId', params: { threadId: childThreadId } });
+      await navigate({ to: '/t/$threadId', params: { threadId: childThreadId } });
       onBranchReady(vars.body?.previewText ?? '');
     },
     onError: (err) => {
