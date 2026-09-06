@@ -3,7 +3,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { CodexProcessManager } from '../codex/codex-process-manager.service';
 import { CodexService } from '../codex/codex.service';
 import type { v2 } from '../codex/codex-schema';
-import { isNotMaterializedError } from './thread-errors';
+import { readThreadWithTurns } from './thread-history';
 
 /** Prevents duplicate app-server resume calls for the same thread generation. */
 @Injectable()
@@ -49,13 +49,21 @@ export class ThreadResumeRegistryService {
     const promise = this.codex
       .request<v2.ThreadResumeResponse>('thread/resume', {
         threadId,
+        excludeTurns: true,
       })
-      .then((response) => {
+      .then(async (response) => {
+        const history = await readThreadWithTurns(this.codex, threadId);
+        const hydratedResponse = {
+          ...response,
+          thread: history.thread,
+          turnsBackwardsCursor: null,
+          itemsBackwardsCursor: null,
+        };
         if (this.epoch.get(key) === callEpoch) {
           this.markResumed(threadId);
-          this.responseCache.set(threadId, response);
+          this.responseCache.set(threadId, hydratedResponse);
         }
-        return response;
+        return hydratedResponse;
       })
       .catch((err: Error) => {
         if (this.epoch.get(key) === callEpoch) {
@@ -108,36 +116,22 @@ export class ThreadResumeRegistryService {
    * Falls back to thread/read when the thread was already resumed this generation.
    * Merges the fresh thread data with cached resolved settings from the
    * most recent resume/start to return a complete `ThreadResumeResponse`.
-   *
-   * If the thread is not yet materialized (no user messages), `includeTurns`
-   * is unavailable — falls back to reading without turns.
    */
   private async readAsResume(
     threadId: string,
   ): Promise<v2.ThreadResumeResponse> {
-    let thread: v2.ThreadReadResponse['thread'];
-    try {
-      const res = await this.codex.request<v2.ThreadReadResponse>(
-        'thread/read',
-        { threadId, includeTurns: true },
-      );
-      thread = res.thread;
-    } catch (err) {
-      if (!isNotMaterializedError(err)) throw err;
-      this.logger.debug(
-        `Thread ${threadId} not materialized; reading without turns`,
-      );
-      const res = await this.codex.request<v2.ThreadReadResponse>(
-        'thread/read',
-        { threadId, includeTurns: false },
-      );
-      thread = { ...res.thread, turns: [] };
-    }
+    const { thread } = await readThreadWithTurns(this.codex, threadId);
 
     // Merge with cached resolved settings (model, approvalPolicy, etc.)
     const cached = this.responseCache.get(threadId);
     if (cached) {
-      return { ...cached, thread, cwd: thread.cwd };
+      return {
+        ...cached,
+        thread,
+        cwd: thread.cwd,
+        turnsBackwardsCursor: null,
+        itemsBackwardsCursor: null,
+      };
     }
     // readAsResume is only called when resumed=true, so a cache entry must exist.
     throw new Error(

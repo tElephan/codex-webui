@@ -16,9 +16,9 @@ import { ThreadDeletionRegistryService } from '../thread-deletion/thread-deletio
 import { ThreadResumeRegistryService } from './thread-resume-registry.service';
 import {
   isDescendantRejectedError,
-  isNotMaterializedError,
   isThreadNotFoundError,
 } from './thread-errors';
+import { readThreadWithTurns } from './thread-history';
 import { ThreadsDeletePlannerService } from './threads-delete-planner.service';
 import type {
   DeleteFailureStage,
@@ -312,25 +312,11 @@ export class ThreadsDeletionService {
   }
 
   private async readInProgressTurnId(threadId: string): Promise<string | null> {
-    let response: v2.ThreadReadResponse;
-    try {
-      response = await this.codex.request<v2.ThreadReadResponse>(
-        'thread/read',
-        {
-          threadId,
-          includeTurns: true,
-        },
-      );
-    } catch (err) {
-      if (!isNotMaterializedError(err)) throw err;
-      response = await this.codex.request<v2.ThreadReadResponse>(
-        'thread/read',
-        {
-          threadId,
-          includeTurns: false,
-        },
-      );
-    }
+    const response = await readThreadWithTurns(
+      this.codex,
+      threadId,
+      'notLoaded',
+    );
     if (response.thread.status.type !== 'active') return null;
     const inProgress = [...response.thread.turns]
       .reverse()

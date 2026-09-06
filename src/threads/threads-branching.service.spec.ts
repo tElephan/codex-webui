@@ -86,11 +86,12 @@ describe('ThreadsBranchingService', () => {
 
     expect(mockCodex.request).toHaveBeenNthCalledWith(1, 'thread/read', {
       threadId: 'source',
-      includeTurns: true,
+      includeTurns: false,
     });
     expect(mockCodex.request).toHaveBeenNthCalledWith(2, 'thread/fork', {
       threadId: 'source',
       beforeTurnId: 'turn-b',
+      excludeTurns: true,
     });
     expect(mockBranches.recordMessageBranch).toHaveBeenCalledWith({
       sourceThreadId: 'source',

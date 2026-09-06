@@ -129,33 +129,48 @@ describe('ThreadsService', () => {
     });
   });
 
-  it('should call thread/read with includeTurns', async () => {
-    mockCodex.request.mockResolvedValue({ thread: { id: 't1' } });
+  it('reads paginated history through the turns list endpoint', async () => {
+    mockCodex.request
+      .mockResolvedValueOnce({
+        thread: { id: 't1', historyMode: 'paginated', turns: [] },
+      })
+      .mockResolvedValueOnce({
+        data: [],
+        nextCursor: null,
+        backwardsCursor: null,
+      });
 
     await service.readThread('t1', true);
 
-    expect(mockCodex.request).toHaveBeenCalledWith('thread/read', {
+    expect(mockCodex.request).toHaveBeenNthCalledWith(1, 'thread/read', {
       threadId: 't1',
-      includeTurns: true,
+      includeTurns: false,
+    });
+    expect(mockCodex.request).toHaveBeenNthCalledWith(2, 'thread/turns/list', {
+      threadId: 't1',
+      cursor: null,
+      limit: 100,
+      sortDirection: 'asc',
+      itemsView: 'full',
     });
   });
 
   it('returns empty turns for a new paginated thread without turn history', async () => {
     mockCodex.request
+      .mockResolvedValueOnce({
+        thread: { id: 't1', historyMode: 'paginated' },
+      })
       .mockRejectedValueOnce(
         new CodexRpcError({
           code: -32601,
           message: 'list_turns is not supported yet',
         }),
-      )
-      .mockResolvedValueOnce({
-        thread: { id: 't1', historyMode: 'paginated' },
-      });
+      );
 
     await expect(service.readThread('t1', true)).resolves.toEqual({
       thread: { id: 't1', historyMode: 'paginated', turns: [] },
     });
-    expect(mockCodex.request).toHaveBeenNthCalledWith(2, 'thread/read', {
+    expect(mockCodex.request).toHaveBeenNthCalledWith(1, 'thread/read', {
       threadId: 't1',
       includeTurns: false,
     });
@@ -257,14 +272,25 @@ describe('ThreadsService', () => {
           ],
         },
       })
+      .mockResolvedValueOnce({
+        thread: {
+          id: 'source',
+          historyMode: 'legacy',
+          turns: [
+            { id: 'done', status: 'completed' },
+            { id: 'partial', status: 'interrupted' },
+          ],
+        },
+      })
       .mockResolvedValueOnce({ thread: { id: 'fork' }, cwd: '/tmp' });
 
     await expect(service.forkThread('source')).resolves.toMatchObject({
       thread: { id: 'fork' },
     });
-    expect(mockCodex.request).toHaveBeenNthCalledWith(3, 'thread/fork', {
+    expect(mockCodex.request).toHaveBeenNthCalledWith(4, 'thread/fork', {
       threadId: 'source',
       lastTurnId: 'done',
+      excludeTurns: true,
     });
   });
 

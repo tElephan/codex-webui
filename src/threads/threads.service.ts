@@ -18,8 +18,9 @@ import {
 } from './threads-branching.service';
 import { ThreadResumeRegistryService } from './thread-resume-registry.service';
 import { ThreadDeletionRegistryService } from '../thread-deletion/thread-deletion-registry.service';
-import { isActiveWriterError, isNotMaterializedError } from './thread-errors';
+import { isActiveWriterError } from './thread-errors';
 import { previewFromUserInput } from './thread-input-preview';
+import { readThreadWithTurns } from './thread-history';
 
 const REQUIRED_HISTORY_MODE = 'paginated';
 
@@ -105,9 +106,8 @@ export class ThreadsService {
   /**
    * Reads a single thread by ID.
    *
-   * If `includeTurns` is requested but the thread is not yet materialized
-   * (no user messages), falls back to reading without turns — an
-   * unmaterialized thread has no turns anyway.
+   * Paginated threads are read as metadata first and hydrated through the
+   * turns-list endpoint; legacy threads retain the app-server full-read path.
    *
    * @param threadId - The thread identifier
    * @param includeTurns - Whether to include turn history
@@ -117,22 +117,14 @@ export class ThreadsService {
     threadId: string,
     includeTurns = false,
   ): Promise<v2.ThreadReadResponse> {
-    try {
-      return await this.codex.request<v2.ThreadReadResponse>('thread/read', {
-        threadId,
-        includeTurns,
-      });
-    } catch (err) {
-      // Thread not materialized — retry without turns if that was requested.
-      if (includeTurns && isNotMaterializedError(err)) {
-        const response = await this.codex.request<v2.ThreadReadResponse>(
-          'thread/read',
-          { threadId, includeTurns: false },
-        );
-        return { thread: { ...response.thread, turns: [] } };
-      }
-      throw err;
+    if (includeTurns) {
+      return readThreadWithTurns(this.codex, threadId);
     }
+
+    return this.codex.request<v2.ThreadReadResponse>('thread/read', {
+      threadId,
+      includeTurns: false,
+    });
   }
 
   /**
@@ -300,11 +292,22 @@ export class ThreadsService {
       {
         threadId,
         ...(lastTurnId && { lastTurnId }),
+        excludeTurns: true,
       },
     );
-    this.resumeRegistry.markResumed(response.thread.id);
-    this.resumeRegistry.cacheResponse(response.thread.id, response);
-    return response;
+    const hasHistoryMode =
+      (response.thread as v2.Thread & { historyMode?: string }).historyMode !==
+      undefined;
+    const history = hasHistoryMode
+      ? await readThreadWithTurns(this.codex, response.thread.id)
+      : { thread: response.thread };
+    const hydratedResponse = { ...response, thread: history.thread };
+    this.resumeRegistry.markResumed(hydratedResponse.thread.id);
+    this.resumeRegistry.cacheResponse(
+      hydratedResponse.thread.id,
+      hydratedResponse,
+    );
+    return hydratedResponse;
   }
 
   /**

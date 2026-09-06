@@ -14,11 +14,11 @@ import type {
 import { ThreadResumeRegistryService } from './thread-resume-registry.service';
 import {
   isInvalidForkBoundaryError,
-  isNotMaterializedError,
   isThreadServerUnavailableError,
   isUnsupportedForkBoundaryFieldError,
 } from './thread-errors';
 import { previewFromUserInput, truncatePreview } from './thread-input-preview';
+import { readThreadWithTurns } from './thread-history';
 
 /**
  * `thread/fork` params using the experimental exclusive boundary.
@@ -156,21 +156,11 @@ export class ThreadsBranchingService {
     threadId: string,
     includeTurns: boolean,
   ): Promise<v2.ThreadReadResponse> {
-    try {
-      return await this.codex.request<v2.ThreadReadResponse>('thread/read', {
-        threadId,
-        includeTurns,
-      });
-    } catch (err) {
-      if (includeTurns && isNotMaterializedError(err)) {
-        const response = await this.codex.request<v2.ThreadReadResponse>(
-          'thread/read',
-          { threadId, includeTurns: false },
-        );
-        return { thread: { ...response.thread, turns: [] } };
-      }
-      throw err;
-    }
+    if (includeTurns) return readThreadWithTurns(this.codex, threadId);
+    return this.codex.request<v2.ThreadReadResponse>('thread/read', {
+      threadId,
+      includeTurns: false,
+    });
   }
 
   private assertThreadIsBranchable(
@@ -202,7 +192,18 @@ export class ThreadsBranchingService {
       threadId: sourceThreadId,
       beforeTurnId: editedTurnId,
     };
-    return this.codex.request<v2.ThreadForkResponse>('thread/fork', params);
+    const response = await this.codex.request<v2.ThreadForkResponse>(
+      'thread/fork',
+      { ...params, excludeTurns: true },
+    );
+    if (
+      (response.thread as v2.Thread & { historyMode?: string }).historyMode ===
+      undefined
+    ) {
+      return response;
+    }
+    const history = await readThreadWithTurns(this.codex, response.thread.id);
+    return { ...response, thread: history.thread };
   }
 
   private readEditedTurnId(body: CreateMessageBranchDto): string {
