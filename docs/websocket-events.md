@@ -115,7 +115,7 @@ dev 模式 `console.debug`，不静默丢弃。
 |--------|----------|
 | `item/commandExecution/requestApproval` | 解析为 ApprovalRequest，渲染审批卡片 |
 | `item/fileChange/requestApproval` | 解析为 ApprovalRequest，渲染审批卡片 |
-| `item/tool/requestUserInput` | 解析为 UserInputRequest（EXPERIMENTAL），渲染 UserInputCard（radio/checkbox/text/password）|
+| `item/tool/requestUserInput` | 解析为 UserInputRequest（EXPERIMENTAL），渲染 UserInputCard（radio/text/password）|
 
 用户点击 Accept/Decline → `codex.serverResponse` → 后端回传 app-server。
 

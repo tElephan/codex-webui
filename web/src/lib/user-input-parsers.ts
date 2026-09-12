@@ -54,14 +54,48 @@ export function parseUserInputQuestions(value: unknown): UserInputQuestion[] {
     .filter((q): q is UserInputQuestion => q !== null);
 }
 
+/** Async questions arrive on agentMessage items as { title, options: string[] }. */
+export function parseAsyncUserInputQuestions(
+  value: unknown,
+): UserInputQuestion[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item: unknown, index) => {
+    if (!item || typeof item !== 'object') return [];
+    const question = item as Record<string, unknown>;
+    if (typeof question.title !== 'string' || !question.title.trim()) return [];
+    const options = Array.isArray(question.options)
+      ? [
+          ...new Set(
+            question.options.filter(
+              (option): option is string =>
+                typeof option === 'string' && !!option.trim(),
+            ),
+          ),
+        ].map((label) => ({ label, description: '' }))
+      : [];
+    return [
+      {
+        id: String(index),
+        header: '',
+        question: question.title,
+        isOther: true,
+        isSecret: false,
+        options: options.length ? options : null,
+      },
+    ];
+  });
+}
+
 /** Builds a UserInputRequest from a persisted PendingServerRequestDto (hydration). */
 export function userInputFromPending(
   request: PendingServerRequestDto,
 ): UserInputRequest | null {
   if (request.method !== 'item/tool/requestUserInput') return null;
   const params = request.params;
-  const turnId = typeof params.turnId === 'string' ? params.turnId : request.turnId;
-  const itemId = typeof params.itemId === 'string' ? params.itemId : request.itemId;
+  const turnId =
+    typeof params.turnId === 'string' ? params.turnId : request.turnId;
+  const itemId =
+    typeof params.itemId === 'string' ? params.itemId : request.itemId;
   if (!turnId || !itemId) return null;
 
   const questions = parseUserInputQuestions(params.questions);

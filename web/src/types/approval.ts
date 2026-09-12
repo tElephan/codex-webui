@@ -63,6 +63,8 @@ export interface UserInputOption {
   description: string;
 }
 
+export type UserInputAnswers = Record<string, { answers: string[] }>;
+
 /** Question payload for item/tool/requestUserInput. */
 export interface UserInputQuestion {
   id: string;

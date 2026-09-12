@@ -24,6 +24,8 @@ export interface TurnItem {
   itemId: string;
   content: string;
   completed: boolean;
+  /** Structured questions sent by request_user_input_async in an agent message. */
+  questions?: import('./approval').UserInputQuestion[];
   toolName?: string;
   toolServer?: string;
   toolArgs?: string;

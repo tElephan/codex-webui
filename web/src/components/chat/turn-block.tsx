@@ -85,7 +85,9 @@ function groupConsecutiveActivity(items: TurnItem[]): GroupedEntry[] {
 /** Empty streamed placeholders take no visual space and must not split activity. */
 function isVisuallyEmptyItem(item: TurnItem): boolean {
   if (item.type === 'reasoning') return !item.content;
-  if (item.type === 'agentMessage') return item.content.trim().length === 0;
+  if (item.type === 'agentMessage') {
+    return item.content.trim().length === 0 && !item.questions?.length;
+  }
   return false;
 }
 

@@ -108,7 +108,7 @@ Mobile/Tablet (< lg):
 
 - **GitDiffPanel** (`turn-items/git-diff-panel.tsx`)：封装 DiffView，集中处理 Shiki 懒加载（模块级单例）、theme（从 `useThemeStore` 读取）、Unified/Split 切换、parse 失败 raw fallback（DiffRenderBoundary error boundary）。
 - **file-change-item**：completed 时展开区域用 GitDiffPanel（`showToolbar=false`，因卡片 header 已有文件名）；流式阶段保留 `<pre>` 原始渲染。
-- **user-input-card** (`turn-items/user-input-card.tsx`)：渲染 `item/tool/requestUserInput`（EXPERIMENTAL）。支持 radio（单选）/ checkbox（isOther+多选）/ text / password。提交通过 `pendingApprovalsRespond` REST。蓝色边框(pending) / 灰色(resolved)。
+- **user-input-card** (`turn-items/user-input-card.tsx`)：渲染 `item/tool/requestUserInput`（EXPERIMENTAL）。支持 radio（单选）/ text / password，isOther 允许自定义回答。提交通过 `pendingApprovalsRespond` REST。蓝色边框(pending) / 灰色(resolved)。
 - **diff-viewer** (turn-level)：按 `diff --git` 分段拆分聚合 diff，每个文件渲染一个 GitDiffPanel（竖排列表，非 tab）。
 - **diff-utils.ts**：`ensureDiffHeaders` 为 Codex 裸 hunk（无 `---`/`+++` 头）补充文件头；`stripGitPathPrefix` 去除 `a/`/`b/` 前缀。
 

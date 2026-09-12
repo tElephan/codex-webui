@@ -4,6 +4,7 @@
  */
 import { create } from 'zustand';
 import { getSocket } from '../socket';
+import { parseAsyncUserInputQuestions } from '../lib/user-input-parsers';
 import type { TimelineEntry, TurnItem, TurnPlanState } from '../types/timeline';
 import type {
   ApprovalRequest,
@@ -83,6 +84,7 @@ function parseTurnItem(item: Record<string, unknown>): TurnItem | null {
         itemId: id,
         content: (item.text as string) ?? '',
         completed: true,
+        questions: parseAsyncUserInputQuestions(item.questions),
       };
     case 'mcpToolCall':
       return {

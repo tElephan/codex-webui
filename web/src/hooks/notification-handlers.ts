@@ -36,6 +36,7 @@ import type {
 } from '@/types/timeline';
 import type { ApprovalRequest } from '@/types/approval';
 import i18n from '@/i18n';
+import { parseAsyncUserInputQuestions } from '@/lib/user-input-parsers';
 
 // ---------------------------------------------------------------------------
 // Context injected by the hook — all store actions + queryClient
@@ -300,6 +301,7 @@ const handleAgentMessageDelta: Handler = (params, ctx) => {
   };
   if (!turnId || !itemId || !hasThreadScope(params, ctx)) return;
   ctx.updateTurnItem(turnId, itemId, (existing) => ({
+    ...existing,
     type: 'agentMessage',
     itemId,
     content: (existing?.content ?? '') + (delta ?? ''),
@@ -349,6 +351,17 @@ const handleItemStarted: Handler = (params, ctx) => {
   const item = params.item as Record<string, unknown> | undefined;
   if (!item) return;
   const id = item.id as string;
+
+  if (item.type === 'agentMessage') {
+    ctx.updateTurnItem(turnId, id, (existing) => ({
+      ...existing,
+      type: 'agentMessage',
+      itemId: id,
+      content: (item.text as string) || existing?.content || '',
+      completed: false,
+      questions: parseAsyncUserInputQuestions(item.questions),
+    }));
+  }
 
   if (item.type === 'mcpToolCall') {
     ctx.updateTurnItem(turnId, id, () => ({
@@ -401,11 +414,14 @@ const handleItemCompleted: Handler = (params, ctx) => {
   const completedItemId = (params.itemId as string) ?? (item.id as string);
 
   if (item.type === 'agentMessage') {
-    ctx.updateTurnItem(turnId, completedItemId, () => ({
+    ctx.updateTurnItem(turnId, completedItemId, (existing) => ({
       type: 'agentMessage',
       itemId: completedItemId,
       content: (item.text as string) ?? '',
       completed: true,
+      questions: item.questions === undefined
+        ? existing?.questions
+        : parseAsyncUserInputQuestions(item.questions),
     }));
   }
   if (item.type === 'reasoning') {

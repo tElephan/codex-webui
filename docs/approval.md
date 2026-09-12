@@ -72,7 +72,7 @@ codex app-server (server request, 有 id)
 | `stores/timeline-store.ts`                        | approvals 按 itemId 索引，userInputRequests 按 requestId 索引                    |
 | `hooks/use-codex-socket.ts`                       | 监听 `codex.serverRequest`，分发 approval / userInput / snackbar                 |
 | `components/chat/turn-items/approval-item.tsx`    | 命令执行审批卡片，动态按钮 + proposed amendments 展示                            |
-| `components/chat/turn-items/user-input-card.tsx`  | 用户输入卡片：radio/checkbox/text/password + submit                              |
+| `components/chat/turn-items/user-input-card.tsx`  | 用户输入卡片：radio/text/password + submit                              |
 | `components/chat/turn-items/file-change-item.tsx` | 文件变更审批（内联按钮，支持全部 4 种决策）                                      |
 | `components/chat/turn-block.tsx`                  | ItemWithRequests：在对应 item 下方渲染审批/输入卡片；unattached 请求独立渲染     |
 
@@ -102,7 +102,7 @@ app-server → item/tool/requestUserInput (questions[])
   → PendingApprovalsService.recordServerRequest() (泛型，无需区分)
   → Socket.IO → use-codex-socket handleCodexServerRequest
   → userInputFromSocket() 解析 → store.addUserInputRequestForThread()
-  → UserInputCard 渲染 (radio/checkbox/text/password)
+  → UserInputCard 渲染 (radio/text/password)
   → 用户 submit → pendingApprovalsRespond REST
   → PendingApprovalsService.respondToRequest() → app-server
 ```
@@ -119,3 +119,11 @@ app-server → item/tool/requestUserInput (questions[])
 - `pendingResolvedRequestIds` 处理乱序到达：resolved 先于 hydrate 时暂存，hydrate 时自动标记
 - 删除中的 thread 会拒绝新的审批响应；相关 pending 请求由删除执行器标记为 `cancelled`
 - **抑制必须可逆**：删除期间到达的 server request 只是不广播，DB 行保持 `pending`，并由 gateway 暂存。删除守卫释放时（`ThreadDeletionRegistryService.onRelease`）逐条比对 DB：仍为 `pending` 的重放到 thread room，已 `cancelled` 的丢弃。判据用 DB 状态而非删除结果，因为被真正删掉的 thread 其请求必然已在本地清理阶段取消 —— 这样重放天然不会为已消失的会话弹出卡片
+
+### 异步选择题
+
+新版 `request_user_input_async` 通过 `agentMessage.questions` 返回 `{ title, options: string[] | null }`，不创建 pending approval。实时 item 事件和历史 hydration 都会保留问题，正文为空时也显示卡片。每题支持单选或自定义回答；推荐选项不会自动提交。
+
+回答作为包含题目和答案的文本发送：活跃轮使用 `turn/steer`，空闲时使用 `turn/start`。若 steer 明确返回当前轮已结束，则改为 start；其他错误保留答案供重试。成功提交的状态按 thread/item 保存在当前标签页的 sessionStorage 中，刷新后仍可查看。
+
+阻塞式 `item/tool/requestUserInput` 继续使用原 JSON-RPC answers 格式，通过 `pendingApprovalsRespond` 提交，只有请求成功才标为 resolved。两种卡片共用 `user-input-form.tsx`。
