@@ -657,6 +657,7 @@ interface TimelineState {
     delta: string,
   ) => void;
   setLoadingForThread: (threadId: string, loading: boolean) => void;
+  setThreadModeForThread: (threadId: string, mode: ThreadMode) => void;
   addUserMessageForThread: (
     threadId: string,
     text: string,
@@ -1240,6 +1241,10 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
     setLoadingForThread: (threadId, loading) => {
       applyThreadUpdate(threadId, (runtime) => ({ ...runtime, loading }));
+    },
+
+    setThreadModeForThread: (threadId, threadMode) => {
+      applyThreadUpdate(threadId, (runtime) => ({ ...runtime, threadMode }));
     },
 
     addUserMessageForThread: (threadId, text, images, turnId) => {

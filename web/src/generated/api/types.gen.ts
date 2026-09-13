@@ -1276,6 +1276,23 @@ export type ThreadDeleteResultDto = {
     diagnostics: Array<BranchAdoptionDiagnosticDto>;
 };
 
+export type ThreadTakeoverPreviewDto = {
+    threadId: string;
+    ownerPid: number | null;
+    /**
+     * Conversations whose writer will be stopped with this Codex process.
+     */
+    affectedThreadIds: Array<string>;
+    /**
+     * Short-lived, single-use confirmation for this exact writer and affected conversation set.
+     */
+    confirmationToken: string;
+};
+
+export type ThreadTakeoverRequestDto = {
+    confirmationToken: string;
+};
+
 export type PendingServerRequestsResponseDto = {
     requests: Array<PendingServerRequestDto>;
 };
@@ -2811,6 +2828,48 @@ export type ThreadsDeletionDeleteThreadResponses = {
 };
 
 export type ThreadsDeletionDeleteThreadResponse = ThreadsDeletionDeleteThreadResponses[keyof ThreadsDeletionDeleteThreadResponses];
+
+export type ThreadTakeoverPreviewData = {
+    body?: never;
+    path: {
+        threadId: string;
+    };
+    query?: never;
+    url: '/api/threads/{threadId}/takeover';
+};
+
+export type ThreadTakeoverPreviewErrors = {
+    409: ApiErrorResponseDto;
+};
+
+export type ThreadTakeoverPreviewError = ThreadTakeoverPreviewErrors[keyof ThreadTakeoverPreviewErrors];
+
+export type ThreadTakeoverPreviewResponses = {
+    200: ThreadTakeoverPreviewDto;
+};
+
+export type ThreadTakeoverPreviewResponse = ThreadTakeoverPreviewResponses[keyof ThreadTakeoverPreviewResponses];
+
+export type ThreadTakeoverTakeoverData = {
+    body: ThreadTakeoverRequestDto;
+    path: {
+        threadId: string;
+    };
+    query?: never;
+    url: '/api/threads/{threadId}/takeover';
+};
+
+export type ThreadTakeoverTakeoverErrors = {
+    409: ApiErrorResponseDto;
+};
+
+export type ThreadTakeoverTakeoverError = ThreadTakeoverTakeoverErrors[keyof ThreadTakeoverTakeoverErrors];
+
+export type ThreadTakeoverTakeoverResponses = {
+    201: ThreadResumeResponseDto;
+};
+
+export type ThreadTakeoverTakeoverResponse = ThreadTakeoverTakeoverResponses[keyof ThreadTakeoverTakeoverResponses];
 
 export type PendingApprovalsListPendingData = {
     body?: never;

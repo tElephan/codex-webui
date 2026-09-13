@@ -706,5 +706,17 @@
   "Nothing was deleted; the plan changed. Review and try again.": "未删除任何内容：删除计划已变化，请重新确认后再试。",
   "Deletion stopped partway. Some conversations were removed.": "删除中途停止，部分对话已被移除。",
   "Could not delete this conversation.": "无法删除该对话。",
-  "Selected for deletion": "选中删除"
+  "Selected for deletion": "选中删除",
+  "This conversation is active in another Codex client. Take it over here or continue in a new branch.": "此会话正在另一个 Codex 客户端中运行。可在此强制接管，或在新分支中继续。",
+  "Force takeover": "强制接管",
+  "Take over this conversation?": "强制接管此会话？",
+  "Continue the original conversation here, keeping its history and branches.": "在此继续原会话，保留历史消息和分支关系。",
+  "Checking conversation ownership…": "正在检查会话占用…",
+  "This will stop the other Codex process and interrupt all {{count}} conversations it owns. Unsaved progress may be lost.": "此操作将结束另一个 Codex 进程，并中断它占用的全部 {{count}} 个会话。尚未保存的进度可能丢失。",
+  "Codex process: {{pid}}": "Codex 进程：{{pid}}",
+  "The other client has released this conversation. You can resume it now.": "另一个客户端已释放此会话，现在可以继续。",
+  "Stop other client and take over": "结束其他客户端并接管",
+  "Resume conversation": "继续会话",
+  "error.threads.takeover_changed": "会话占用已变化或确认已过期，请刷新后重新确认。",
+  "error.threads.takeover_unavailable": "无法强制接管。请关闭占用此会话的其他 Codex 客户端后重试。"
 }

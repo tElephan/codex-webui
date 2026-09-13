@@ -32,6 +32,8 @@ import {
   turnErrorsReadThreadTurnErrors,
 } from '@/generated/api/sdk.gen';
 import { getApiErrorCode, getApiErrorMessage } from '@/lib/api-error';
+import type { ThreadResumeResponseDto } from '@/generated/api';
+import { ThreadTakeoverDialog } from '@/components/chat/thread-takeover-dialog';
 
 /** Extracts a display label from a thread DTO. */
 function threadLabel(thread: {
@@ -48,6 +50,7 @@ export function ThreadView() {
   const queryClient = useQueryClient();
   const chatInputRef = useRef<ChatInputHandle>(null);
   const [sessionPanelOpen, setSessionPanelOpen] = useState(false);
+  const [takeoverThreadId, setTakeoverThreadId] = useState<string | null>(null);
 
   const threadCwd = useTimelineStore((s) => s.threadCwd);
   const selectFileForWindow = useFilesStore((s) => s.selectFileForWindow);
@@ -105,37 +108,37 @@ export function ThreadView() {
     setSessionPanelOpen(false);
   }, []);
 
+  const handleResumeSuccess = (res: ThreadResumeResponseDto) => {
+    const tid = res.thread.id;
+    useTimelineStore.getState().setThreadModeForThread(tid, 'live');
+    useTimelineStore.getState().subscribeThread(tid);
+    const title = threadLabel(res.thread);
+    setThreadTitleForThread(tid, title);
+    hydrateTimelineForThread(tid, res.thread.turns, res.cwd);
+    // Restore active turn state so sidebar shows loading and input stays in steer mode.
+    setThreadStatusForThread(tid, res.thread.status);
+    const activeTurn = res.thread.turns.find((t) => t.status === 'inProgress');
+    if (activeTurn) {
+      setActiveTurnIdForThread(tid, activeTurn.id);
+      setLoadingForThread(tid, true);
+    } else {
+      setLoadingForThread(tid, false);
+      void dispatchNextQueuedTurn(tid);
+    }
+    void tokenUsageReadThreadTokenUsage({ path: { threadId: tid } })
+      .then(({ data }) => data && hydrateTokenUsageForThread(tid, data.turns))
+      .catch(() => undefined);
+    void turnDiffReadThreadTurnDiffs({ path: { threadId: tid } })
+      .then(({ data }) => data && hydrateTurnDiffsForThread(tid, data.turns))
+      .catch(() => undefined);
+    void turnErrorsReadThreadTurnErrors({ path: { threadId: tid } })
+      .then(({ data }) => data && hydrateTurnErrorsForThread(tid, data.errors))
+      .catch(() => undefined);
+  };
+
   const resumeThread = useMutation({
     ...threadsResumeThreadMutation(),
-    onSuccess: (res) => {
-      const tid = res.thread.id;
-      const title = threadLabel(res.thread);
-      setThreadTitleForThread(tid, title);
-      hydrateTimelineForThread(tid, res.thread.turns, res.cwd);
-      // Restore active turn state so sidebar shows loading and input stays in steer mode.
-      setThreadStatusForThread(tid, res.thread.status);
-      const activeTurn = res.thread.turns.find(
-        (t) => t.status === 'inProgress',
-      );
-      if (activeTurn) {
-        setActiveTurnIdForThread(tid, activeTurn.id);
-        setLoadingForThread(tid, true);
-      } else {
-        setLoadingForThread(tid, false);
-        void dispatchNextQueuedTurn(tid);
-      }
-      void tokenUsageReadThreadTokenUsage({ path: { threadId: tid } })
-        .then(({ data }) => data && hydrateTokenUsageForThread(tid, data.turns))
-        .catch(() => undefined);
-      void turnDiffReadThreadTurnDiffs({ path: { threadId: tid } })
-        .then(({ data }) => data && hydrateTurnDiffsForThread(tid, data.turns))
-        .catch(() => undefined);
-      void turnErrorsReadThreadTurnErrors({ path: { threadId: tid } })
-        .then(
-          ({ data }) => data && hydrateTurnErrorsForThread(tid, data.errors),
-        )
-        .catch(() => undefined);
-    },
+    onSuccess: handleResumeSuccess,
     onError: (err, vars) => {
       const failedId = vars.path.threadId;
       setLoadingForThread(failedId, false);
@@ -293,8 +296,18 @@ export function ThreadView() {
         panelOpen={sessionPanelOpen}
         onTogglePanel={() => setSessionPanelOpen((o) => !o)}
         onForkReadOnly={() => forkThread.mutate({ path: { threadId } })}
+        onTakeover={() => setTakeoverThreadId(threadId)}
         forkPending={forkThread.isPending}
       />
+      {takeoverThreadId === threadId && (
+        <ThreadTakeoverDialog
+          key={threadId}
+          threadId={threadId}
+          open
+          onClose={() => setTakeoverThreadId(null)}
+          onResumed={handleResumeSuccess}
+        />
+      )}
     </>
   );
 }

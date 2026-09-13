@@ -93,8 +93,18 @@ export class ThreadResumeRegistryService {
    * `readAsResume` merges cached settings with a fresh `thread/read`
    * to return a complete `ThreadResumeResponse`.
    */
-  cacheResponse(threadId: string, response: v2.ThreadResumeResponse): void {
-    this.responseCache.set(threadId, response);
+  cacheResponse(
+    threadId: string,
+    response:
+      | v2.ThreadStartResponse
+      | v2.ThreadForkResponse
+      | v2.ThreadResumeResponse,
+  ): void {
+    this.responseCache.set(threadId, {
+      turnsBackwardsCursor: null,
+      itemsBackwardsCursor: null,
+      ...response,
+    });
   }
 
   /** Returns true when the thread has already been resumed in this generation. */

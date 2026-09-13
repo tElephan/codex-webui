@@ -17,6 +17,9 @@ import { ThreadsDeletionController } from './threads-deletion.controller';
 import { ThreadsDeletionService } from './threads-deletion.service';
 import { ThreadsGateway } from './threads.gateway';
 import { ThreadsService } from './threads.service';
+import { ThreadWriterService } from './thread-writer.service';
+import { ThreadTakeoverService } from './thread-takeover.service';
+import { ThreadTakeoverController } from './thread-takeover.controller';
 
 @Module({
   imports: [
@@ -29,8 +32,14 @@ import { ThreadsService } from './threads.service';
     PendingApprovalsModule,
     ThreadDeletionModule,
   ],
-  controllers: [ThreadsController, ThreadsDeletionController],
+  controllers: [
+    ThreadsController,
+    ThreadsDeletionController,
+    ThreadTakeoverController,
+  ],
   providers: [
+    ThreadWriterService,
+    ThreadTakeoverService,
     ThreadsService,
     ThreadsBranchingService,
     ThreadsDeletePlannerService,

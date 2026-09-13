@@ -127,3 +127,9 @@ app-server → item/tool/requestUserInput (questions[])
 回答作为包含题目和答案的文本发送：活跃轮使用 `turn/steer`，空闲时使用 `turn/start`。若 steer 明确返回当前轮已结束，则改为 start；其他错误保留答案供重试。成功提交的状态按 thread/item 保存在当前标签页的 sessionStorage 中，刷新后仍可查看。
 
 阻塞式 `item/tool/requestUserInput` 继续使用原 JSON-RPC answers 格式，通过 `pendingApprovalsRespond` 提交，只有请求成功才标为 resolved。两种卡片共用 `user-input-form.tsx`。
+
+### 接管被其他客户端占用的会话
+
+出现 `threads.active_writer` 时，输入区域提供“强制接管”和“在新分支中继续”。强制接管保留原 thread ID、历史和分支关系。当前 Codex 协议没有跨客户端释放单个 writer 的接口，因此确认框会列出持锁 Codex 进程及其在当前 Codex home 下占用的全部会话；确认后向该进程发送 SIGTERM，等待文件锁释放，再恢复原会话。
+
+`GET /api/threads/:threadId/takeover` 只预览，返回有效期 60 秒的单次确认凭据；`POST` 携带该凭据执行。后端再次核对进程启动时间、程序路径和受影响会话集合，占用变化时要求重新确认。已经释放占用时只恢复会话。此功能适用于同一用户在本机 Linux 上运行的其他 Codex 进程，保护 WebUI 自身的进程树。实现通过 `/proc/locks` 与文件 inode 确认真正的 FLOCK 持有者，不能通过删除锁文件绕过互斥。其他平台或无法核实持锁进程时，可关闭另一客户端或选择新分支继续。

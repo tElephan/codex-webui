@@ -116,6 +116,8 @@ export const ErrorCode = {
     invalidApprovalPolicy: 'threads.invalid_approval_policy',
     invalidSandboxMode: 'threads.invalid_sandbox_mode',
     activeWriter: 'threads.active_writer',
+    takeoverUnavailable: 'threads.takeover_unavailable',
+    takeoverChanged: 'threads.takeover_changed',
     paginatedHistoryRequired: 'threads.paginated_history_required',
     branchEditedTurnRequired: 'threads.branch_edited_turn_required',
     branchEditedTurnNotFound: 'threads.branch_edited_turn_not_found',

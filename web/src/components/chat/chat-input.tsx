@@ -82,11 +82,12 @@ interface Props {
   panelOpen: boolean;
   onTogglePanel: () => void;
   onForkReadOnly: () => void;
+  onTakeover: () => void;
   forkPending: boolean;
 }
 
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
-  { panelOpen, onTogglePanel, onForkReadOnly, forkPending },
+  { panelOpen, onTogglePanel, onForkReadOnly, onTakeover, forkPending },
   ref,
 ) {
   const threadId = useTimelineStore((s) => s.threadId);
@@ -527,30 +528,43 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
   return (
     <footer className="glass-4 sticky bottom-0 z-10 px-3 py-2.5 sm:px-4 sm:py-3 lg:px-6">
       {inputDisabled && (
-        <div className="mb-2 flex items-center justify-between gap-3 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
           <span className="min-w-0">
             {writerConflict
               ? t(
-                  'This conversation is active in another Codex client. Continue in a new branch to avoid conflicting writers.',
+                  'This conversation is active in another Codex client. Take it over here or continue in a new branch.',
                 )
               : t(
                   'Archived threads are read-only. Unarchive or fork to continue.',
                 )}
           </span>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 shrink-0 gap-1.5 px-2.5 text-xs"
-            disabled={forkPending}
-            onClick={onForkReadOnly}
-          >
-            {forkPending ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <GitFork className="h-3.5 w-3.5" />
+          <div className="flex shrink-0 flex-wrap gap-2">
+            {writerConflict && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 px-2.5 text-xs"
+                onClick={onTakeover}
+                disabled={forkPending}
+              >
+                {t('Force takeover')}
+              </Button>
             )}
-            {t('Continue in a branch')}
-          </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 shrink-0 gap-1.5 px-2.5 text-xs"
+              disabled={forkPending}
+              onClick={onForkReadOnly}
+            >
+              {forkPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <GitFork className="h-3.5 w-3.5" />
+              )}
+              {t('Continue in a branch')}
+            </Button>
+          </div>
         </div>
       )}
       <QueuedTurnList
