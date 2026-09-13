@@ -4,7 +4,7 @@
  */
 import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { FileWarning, Loader2, RefreshCw } from 'lucide-react';
+import { FileWarning, Loader2, RefreshCw, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { filesGetMetadataOptions } from '@/generated/api/@tanstack/react-query.gen';
@@ -12,7 +12,7 @@ import { useFilesStore } from '@/stores/files-store';
 import { getFileCategory, isInlineLoadingCategory } from '@/lib/file-category';
 import { FileContentViewer } from './viewers';
 
-export function FileViewer() {
+export function FileViewer({ onClosePreview }: { onClosePreview?: () => void }) {
   const { t } = useTranslation();
   const selectedFile = useFilesStore((s) => s.selectedFile);
   const setFileMtime = useFilesStore((s) => s.setFileMtime);
@@ -67,10 +67,23 @@ export function FileViewer() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {/* File path header */}
-      <div className="flex shrink-0 items-center border-b border-border px-3 py-1.5">
-        <span className="truncate text-xs text-muted-foreground">
+      <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-1.5">
+        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
           {selectedFile}
         </span>
+        {onClosePreview && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            onClick={onClosePreview}
+            aria-label={t('Close preview')}
+            title={t('Close preview')}
+          >
+            <X className="h-3 w-3" />
+            {t('Close preview')}
+          </Button>
+        )}
       </div>
 
       <div className="min-h-0 flex-1">

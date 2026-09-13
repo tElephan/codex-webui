@@ -237,6 +237,7 @@ export function SessionPanel({
           onClick={onClose}
           className="shrink-0 px-2 py-1.5 text-muted-foreground hover:text-foreground"
           title={t('Close panel')}
+          aria-label={t('Close panel')}
         >
           <X className="h-3.5 w-3.5" />
         </button>
@@ -259,7 +260,7 @@ export function SessionPanel({
             />
           ))}
         </div>
-        {!terminalVisible && <FileViewer />}
+        {!terminalVisible && <FileViewer onClosePreview={onClose} />}
       </div>
 
       {terminalVisible && (
