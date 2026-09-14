@@ -3,6 +3,7 @@ import { Activity, Check, Edit3, EllipsisVertical, Globe, Menu, Moon, Network, P
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { withBasePath } from '@/base-path';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -234,7 +235,10 @@ export function ChatHeader({ dark, onToggleDark, onToggleDiagnostics }: Props) {
               )}
             </div>
           ) : (
-            <h1 className="text-lg font-semibold tracking-tight">Codex WebUI</h1>
+            <h1 className="flex items-center gap-2 text-lg font-semibold tracking-tight">
+              <img src={withBasePath('/icon-192.png?v=2')} alt="" width={28} height={28} className="shrink-0 rounded-lg" />
+              Codex WebUI
+            </h1>
           )}
         </div>
         {/* Always visible badges */}

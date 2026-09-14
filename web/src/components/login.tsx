@@ -6,7 +6,8 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { KeyRound, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
+import { withBasePath } from '@/base-path';
 
 interface Props {
   onLogin: (apiKey: string) => Promise<LoginResult>;
@@ -50,7 +51,7 @@ export function LoginPage({ onLogin }: Props) {
         className="glass-5 relative z-10 w-full max-w-sm space-y-5 rounded-3xl p-8"
       >
         <div className="flex items-center gap-2.5 text-lg font-semibold">
-          <KeyRound className="h-5 w-5 opacity-70" />
+          <img src={withBasePath('/icon-192.png?v=2')} alt="" width={40} height={40} className="shrink-0 rounded-xl" />
           Codex WebUI
         </div>
         <p className="text-sm text-muted-foreground">

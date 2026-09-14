@@ -1,17 +1,17 @@
 const CACHE_PREFIX = 'codex-webui';
-const SHELL_CACHE = `${CACHE_PREFIX}-shell-v1`;
-const ASSET_CACHE = `${CACHE_PREFIX}-assets-v1`;
+const SHELL_CACHE = `${CACHE_PREFIX}-shell-v2`;
+const ASSET_CACHE = `${CACHE_PREFIX}-assets-v2`;
 const SCOPE_URL = new URL(self.registration.scope);
 const APP_ROOT_URL = new URL('./', SCOPE_URL).href;
 
 const SHELL_URLS = [
   APP_ROOT_URL,
   new URL('manifest.webmanifest', SCOPE_URL).href,
-  new URL('favicon.svg', SCOPE_URL).href,
-  new URL('apple-touch-icon.png', SCOPE_URL).href,
-  new URL('icon-192.png', SCOPE_URL).href,
-  new URL('icon-512.png', SCOPE_URL).href,
-  new URL('icon-maskable-512.png', SCOPE_URL).href,
+  new URL('favicon.png?v=2', SCOPE_URL).href,
+  new URL('apple-touch-icon.png?v=2', SCOPE_URL).href,
+  new URL('icon-192.png?v=2', SCOPE_URL).href,
+  new URL('icon-512.png?v=2', SCOPE_URL).href,
+  new URL('icon-maskable-512.png?v=2', SCOPE_URL).href,
 ];
 
 self.addEventListener('install', (event) => {
