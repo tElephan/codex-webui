@@ -85,23 +85,33 @@ export function collapseBranchThreads(
   threads: ThreadDto[],
   rootByThreadId: Map<string, string>,
 ): ThreadDto[] {
-  if (rootByThreadId.size === 0) return threads;
+  const latestById = new Map<string, ThreadDto>();
+  for (const thread of threads) {
+    const previous = latestById.get(thread.id);
+    if (!previous || thread.updatedAt > previous.updatedAt) {
+      latestById.set(thread.id, thread);
+    }
+  }
+  const uniqueThreads = [...latestById.values()];
+  if (rootByThreadId.size === 0) {
+    return uniqueThreads.sort((a, b) => b.updatedAt - a.updatedAt);
+  }
 
-  const presentIds = new Set(threads.map((thread) => thread.id));
+  const presentIds = new Set(latestById.keys());
   const isFoldable = (threadId: string): boolean => {
     const rootId = rootByThreadId.get(threadId);
     return rootId !== undefined && presentIds.has(rootId);
   };
 
   const latestByRoot = new Map<string, number>();
-  for (const thread of threads) {
+  for (const thread of uniqueThreads) {
     if (!isFoldable(thread.id)) continue;
     const rootId = rootByThreadId.get(thread.id)!;
     const current = latestByRoot.get(rootId) ?? 0;
     if (thread.updatedAt > current) latestByRoot.set(rootId, thread.updatedAt);
   }
 
-  return threads
+  return uniqueThreads
     .filter((thread) => !isFoldable(thread.id))
     .map((thread) => {
       const branchActivity = latestByRoot.get(thread.id);

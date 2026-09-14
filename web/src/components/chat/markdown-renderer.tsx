@@ -3,10 +3,10 @@
  * Uses react-markdown + remark-gfm. Code blocks get Shiki syntax highlighting
  * (lazy-loaded on first completed code block, plain <code> fallback while loading).
  */
-import { memo, useEffect, useState, useCallback, type ComponentProps } from 'react';
+import { memo, useEffect, useId, useState, useCallback, type ComponentProps } from 'react';
 import Markdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Copy, Check, FileText } from 'lucide-react';
+import { Copy, Check, FileText, Loader2 } from 'lucide-react';
 import { showSnackbar } from '@/stores/snackbar-store';
 import { useTimelineStore } from '@/stores/timeline-store';
 import { useTranslation } from 'react-i18next';
@@ -19,6 +19,8 @@ type HighlighterType = Awaited<ReturnType<typeof import('shiki')['createHighligh
 
 let highlighterPromise: Promise<HighlighterType> | null = null;
 let highlighterInstance: HighlighterType | null = null;
+let mermaidPromise: Promise<typeof import('mermaid')['default']> | null = null;
+let mermaidRenderQueue = Promise.resolve();
 
 /** Lazily creates and caches a Shiki highlighter. */
 function getHighlighter(): Promise<HighlighterType> {
@@ -38,6 +40,29 @@ function getHighlighter(): Promise<HighlighterType> {
     });
   }
   return highlighterPromise;
+}
+
+function renderMermaidDiagram(
+  id: string,
+  source: string,
+  dark: boolean,
+): Promise<string> {
+  const render = mermaidRenderQueue.then(async () => {
+    mermaidPromise ??= import('mermaid').then((module) => module.default);
+    const mermaid = await mermaidPromise;
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: 'strict',
+      suppressErrorRendering: true,
+      theme: dark ? 'dark' : 'default',
+    });
+    return (await mermaid.render(id, source)).svg;
+  });
+  mermaidRenderQueue = render.then(
+    () => undefined,
+    () => undefined,
+  );
+  return render;
 }
 
 interface Props {
@@ -134,6 +159,84 @@ function CodeBlock({
   );
 }
 
+function MermaidDiagram({ source, completed }: { source: string; completed: boolean }) {
+  const { t } = useTranslation();
+  const dark = useThemeStore((state) => state.dark);
+  const diagramId = `mermaid-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
+  const renderKey = completed ? `${dark}:${source}` : null;
+  const [result, setResult] = useState<{
+    key: string;
+    svg: string | null;
+    failed: boolean;
+  } | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!renderKey) return;
+    let cancelled = false;
+    void renderMermaidDiagram(diagramId, source, dark)
+      .then((svg) => {
+        if (!cancelled) setResult({ key: renderKey, svg, failed: false });
+      })
+      .catch(() => {
+        if (!cancelled) setResult({ key: renderKey, svg: null, failed: true });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [dark, diagramId, renderKey, source]);
+
+  const handleCopy = useCallback(async () => {
+    try {
+      await copyText(source);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      showSnackbar(t('Copy failed'), 'error');
+    }
+  }, [source, t]);
+
+  const currentResult = result?.key === renderKey ? result : null;
+  if (!completed || currentResult?.failed) {
+    return (
+      <CodeBlock className="language-mermaid" completed={false}>
+        {source}
+      </CodeBlock>
+    );
+  }
+
+  return (
+    <div className="group my-3 overflow-hidden rounded-lg border border-border/50 bg-background">
+      <div className="flex items-center justify-between border-b border-border/30 px-3 py-1">
+        <span className="text-xs text-muted-foreground">Mermaid</span>
+        <button
+          type="button"
+          onClick={() => void handleCopy()}
+          aria-label={copied ? t('Copied!') : t('Copy')}
+          title={copied ? t('Copied!') : t('Copy')}
+          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground opacity-100 transition-opacity hover:text-foreground focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+        >
+          {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+          {copied ? t('Copied!') : t('Copy')}
+        </button>
+      </div>
+      {currentResult?.svg ? (
+        <div
+          className="overflow-auto p-4 [&_svg]:mx-auto [&_svg]:h-auto [&_svg]:max-w-full"
+          dangerouslySetInnerHTML={{ __html: currentResult.svg }}
+        />
+      ) : (
+        <div
+          className="flex min-h-32 items-center justify-center text-muted-foreground"
+          aria-label={t('Rendering diagram')}
+        >
+          <Loader2 className="h-4 w-4 animate-spin" />
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Maps markdown elements to Tailwind-styled components. */
 const components = (
   completed: boolean,
@@ -194,9 +297,13 @@ const components = (
   code: ({ className, children, ...rest }) => {
     const isBlock = className?.startsWith('language-') || String(children).includes('\n');
     if (isBlock) {
+      const source = String(children).replace(/\n$/, '');
+      if (className?.replace('language-', '').toLowerCase() === 'mermaid') {
+        return <MermaidDiagram source={source} completed={completed} />;
+      }
       return (
         <CodeBlock className={className} completed={completed}>
-          {String(children).replace(/\n$/, '')}
+          {source}
         </CodeBlock>
       );
     }

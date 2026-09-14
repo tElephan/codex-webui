@@ -4,10 +4,11 @@
  */
 import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { FileWarning, Loader2, RefreshCw, X } from 'lucide-react';
+import { Download, FileWarning, Loader2, RefreshCw, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { filesGetMetadataOptions } from '@/generated/api/@tanstack/react-query.gen';
+import { useFileOperations } from '@/hooks/use-file-operations';
 import { useFilesStore } from '@/stores/files-store';
 import { getFileCategory, isInlineLoadingCategory } from '@/lib/file-category';
 import { FileContentViewer } from './viewers';
@@ -16,6 +17,7 @@ export function FileViewer({ onClosePreview }: { onClosePreview?: () => void }) 
   const { t } = useTranslation();
   const selectedFile = useFilesStore((s) => s.selectedFile);
   const setFileMtime = useFilesStore((s) => s.setFileMtime);
+  const { downloadFile } = useFileOperations();
 
   const { data: metadata, isError, isLoading, refetch } = useQuery({
     ...filesGetMetadataOptions({ query: { path: selectedFile! } }),
@@ -71,6 +73,17 @@ export function FileViewer({ onClosePreview }: { onClosePreview?: () => void }) 
         <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
           {selectedFile}
         </span>
+        <Button
+          type="button"
+          variant="ghost"
+          size="xs"
+          onClick={() => void downloadFile(selectedFile)}
+          aria-label={t('Download')}
+          title={t('Download')}
+        >
+          <Download className="h-3 w-3" />
+          {t('Download')}
+        </Button>
         {onClosePreview && (
           <Button
             type="button"

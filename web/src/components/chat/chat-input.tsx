@@ -454,12 +454,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
 
   const handleSubmit = useCallback(() => {
     if (hasActiveTurn) {
-      if (canSteer) handleSteer();
-      else handleQueue();
+      handleQueue();
       return;
     }
     handleSend();
-  }, [canSteer, handleQueue, handleSend, handleSteer, hasActiveTurn]);
+  }, [handleQueue, handleSend, hasActiveTurn]);
 
   const sendExternalInput = useCallback(
     (text: string) => {
@@ -615,7 +614,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
                   ? t('Thread is active in another Codex client')
                   : t('Archived thread is read-only')
                 : hasActiveTurn
-                  ? t('Steer or queue a follow-up...')
+                  ? t('Queue a follow-up...')
                   : threadId
                     ? t('Type a message... (@ to mention files, paste images)')
                     : t('Create a thread first')
