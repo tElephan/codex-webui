@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { filesReadFileOptions } from '@/generated/api/@tanstack/react-query.gen';
 import { useSaveFile } from '@/hooks/use-save-file';
 import { useFilesStore } from '@/stores/files-store';
+import { useThemeStore } from '@/stores/theme-store';
 
 interface Props {
   filePath: string;
@@ -26,6 +27,7 @@ interface Props {
 
 export function CodeViewer({ filePath }: Props) {
   const { t } = useTranslation();
+  const dark = useThemeStore((s) => s.dark);
   const fileMtime = useFilesStore((s) => s.fileMtime);
   const fileEdit = useFilesStore((s) => s.fileEdits[filePath]);
   const setFileEdit = useFilesStore((s) => s.setFileEdit);
@@ -160,7 +162,7 @@ export function CodeViewer({ filePath }: Props) {
             path={filePath}
             value={content}
             language={language}
-            theme="vs-dark"
+            theme={dark ? 'vs-dark' : 'vs'}
             height="100%"
             onChange={(value) =>
               setFileEdit(filePath, value ?? '', persistedContent, fileMtime)

@@ -17,3 +17,11 @@ Open `http://127.0.0.1:5179/tests/fixtures/user-input.html?active=1` for an acti
 The takeover fixture is at `http://127.0.0.1:5179/tests/fixtures/thread-takeover.html`. It renders the real conflict banner and confirmation dialog with simulated API responses. Set `window.takeoverTest.changed = true` to simulate an ownership change; inspect `window.takeoverTest.requests` to verify that cancel sends no takeover request. Add `?released=1` to exercise resuming after the other client releases ownership. No process is stopped by this browser fixture.
 
 Backend takeover and writer-inspection regressions: `pnpm test --runInBand thread-writer thread-takeover`.
+
+The code preview fixture is at `http://127.0.0.1:5179/tests/fixtures/code-preview.html`.
+It renders the real SessionPanel with local file responses and disabled terminal connections.
+Add `?window=1` for FilesPanel, `?file=README.md` for Markdown preview/source, or
+`?file=example.zip` for read-only archive code. Add `&dark=1` to start in dark mode.
+Use `window.codePreviewTest.setDark(true/false)` to check live theme changes and
+`window.codePreviewTest.writes` to inspect saves. Check editor height after resizing
+the viewport or panel and verify that switching themes preserves unsaved edits.

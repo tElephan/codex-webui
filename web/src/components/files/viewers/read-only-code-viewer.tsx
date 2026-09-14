@@ -3,6 +3,7 @@ import Editor from '@monaco-editor/react';
 import { useQuery } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useThemeStore } from '@/stores/theme-store';
 import { fetchPreviewText, previewSourceLabel, type PreviewSource } from './preview-source';
 
 interface Props {
@@ -11,6 +12,7 @@ interface Props {
 
 export function ReadOnlyCodeViewer({ source }: Props) {
   const { t } = useTranslation();
+  const dark = useThemeStore((s) => s.dark);
   const label = previewSourceLabel(source);
   const { data, isLoading, error } = useQuery({
     queryKey: ['preview-text', source],
@@ -27,7 +29,7 @@ export function ReadOnlyCodeViewer({ source }: Props) {
       path={label}
       value={data ?? ''}
       language={guessLanguage(label)}
-      theme="vs-dark"
+      theme={dark ? 'vs-dark' : 'vs'}
       height="100%"
       options={{
         readOnly: true,
