@@ -105,7 +105,12 @@ export function ChatTimeline({ onEditMessage }: Props) {
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (el) {
-      shouldAutoScroll.current = isNearBottom(el);
+      const following = isNearBottom(el);
+      shouldAutoScroll.current = following;
+      if (!following && scrollFrameRef.current !== null) {
+        cancelAnimationFrame(scrollFrameRef.current);
+        scrollFrameRef.current = null;
+      }
     }
   }, []);
 
@@ -129,6 +134,7 @@ export function ChatTimeline({ onEditMessage }: Props) {
 
     scrollFrameRef.current = requestAnimationFrame(() => {
       scrollFrameRef.current = null;
+      if (!shouldAutoScroll.current) return;
       virtualizer.scrollToIndex(timeline.length - 1, {
         align: 'end',
         behavior: previousCount > 0 && appended ? 'smooth' : 'auto',
@@ -151,7 +157,8 @@ export function ChatTimeline({ onEditMessage }: Props) {
     initialScrollThreadRef.current = threadId;
     shouldAutoScroll.current = true;
 
-    const scrollToBottom = () => {
+    const scrollToBottom = (force = false) => {
+      if (!force && !shouldAutoScroll.current) return;
       virtualizer.scrollToIndex(timeline.length - 1, { align: 'end' });
       const element = scrollRef.current;
       if (element) element.scrollTop = element.scrollHeight;
@@ -167,7 +174,7 @@ export function ChatTimeline({ onEditMessage }: Props) {
       });
     };
 
-    scrollToBottom();
+    scrollToBottom(true);
     correctAfterFrame(2);
 
     return () => {
