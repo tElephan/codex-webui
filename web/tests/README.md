@@ -25,3 +25,9 @@ Add `?window=1` for FilesPanel, `?file=README.md` for Markdown preview/source, o
 Use `window.codePreviewTest.setDark(true/false)` to check live theme changes and
 `window.codePreviewTest.writes` to inspect saves. Check editor height after resizing
 the viewport or panel and verify that switching themes preserves unsaved edits.
+
+Use `?file=example.html` or `?file=example.HTM` for HTML render/source checks.
+Verify that the styled page and its button work inside the sandbox, source edits
+appear when returning to preview without saving, and switching back preserves
+the draft. The preview must not set `document.body.dataset.previewEscaped` on
+the outer page; the iframe body should instead have `data-isolated="true"`.

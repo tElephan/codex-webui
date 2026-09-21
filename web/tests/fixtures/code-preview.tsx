@@ -21,6 +21,16 @@ const contents = new Map([
   ['/fixture/example.ts', code],
   ['/fixture/README.md', `# Preview\n\nExample code:\n\n\`\`\`typescript\n${code}\n\`\`\`\n`],
 ]);
+const html = `<!doctype html><html><head><style>
+body { margin: 24px; font-family: sans-serif; } h1 { color: rgb(0, 128, 128); }
+</style></head><body><h1>HTML preview fixture</h1>
+<button onclick="this.textContent='Clicked'">Try script</button>
+<script>
+try { parent.document.body.dataset.previewEscaped = 'true'; }
+catch { document.body.dataset.isolated = 'true'; }
+</script></body></html>`;
+contents.set('/fixture/example.html', html);
+contents.set('/fixture/example.HTM', html);
 const writes: unknown[] = [];
 
 await i18n.changeLanguage('en');
@@ -53,7 +63,7 @@ client.setConfig({
         return Response.json({ mtime: 2 });
       }
       case '/api/files/tree':
-        return Response.json(['example.ts', 'README.md', 'example.zip'].map((name) => ({
+        return Response.json(['example.ts', 'README.md', 'example.html', 'example.HTM', 'example.zip'].map((name) => ({
           path: `/fixture/${name}`, name, type: 'file', size: code.length,
         })));
       case '/api/files/roots':

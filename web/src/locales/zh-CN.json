@@ -135,6 +135,8 @@
   "Your changes to {{name}} will be lost if you don't save them.": "如果不保存，对 {{name}} 的更改将会丢失。",
   "Don't Save": "不保存",
   "Markdown view": "Markdown 查看模式",
+  "HTML view": "HTML 查看模式",
+  "HTML preview": "HTML 渲染预览",
   "Preview": "渲染",
   "Source": "源码",
   "Close panel": "关闭面板",

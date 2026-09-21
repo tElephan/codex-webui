@@ -33,8 +33,10 @@ export function CodeViewer({ filePath }: Props) {
   const setFileEdit = useFilesStore((s) => s.setFileEdit);
   const discardFileEdit = useFilesStore((s) => s.discardFileEdit);
   const markdown = isMarkdownFile(filePath);
+  const html = /\.html?$/i.test(filePath);
+  const hasPreview = markdown || html;
   const [viewMode, setViewMode] = useState<'preview' | 'source'>(
-    markdown ? 'preview' : 'source',
+    hasPreview ? 'preview' : 'source',
   );
 
   const {
@@ -100,10 +102,10 @@ export function CodeViewer({ filePath }: Props) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-2 py-1">
-        {markdown ? (
+        {hasPreview ? (
           <div
             role="group"
-            aria-label={t('Markdown view')}
+            aria-label={html ? t('HTML view') : t('Markdown view')}
             className="flex h-6 items-center rounded-md bg-muted p-0.5"
           >
             <button
@@ -146,7 +148,15 @@ export function CodeViewer({ filePath }: Props) {
       </div>
 
       <div className="relative min-h-0 flex-1">
-        {viewMode === 'preview' ? (
+        {viewMode === 'preview' && html ? (
+          <iframe
+            title={t('HTML preview')}
+            srcDoc={content}
+            sandbox="allow-scripts"
+            referrerPolicy="no-referrer"
+            className="h-full w-full border-0 bg-white"
+          />
+        ) : viewMode === 'preview' ? (
           <div className="h-full overflow-auto px-4 pb-8 pt-3 sm:px-6 sm:pb-10 sm:pt-5">
             <div className="mx-auto max-w-4xl">
               <MarkdownRenderer
@@ -202,6 +212,7 @@ function guessLanguage(fileName: string): string {
     css: 'css',
     scss: 'scss',
     html: 'html',
+    htm: 'html',
     xml: 'xml',
     yaml: 'yaml',
     yml: 'yaml',
