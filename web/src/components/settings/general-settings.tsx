@@ -1,27 +1,26 @@
 /** General settings: appearance, language, WebUI session logout. */
-import { Globe, LogOut, Moon, Sun } from 'lucide-react';
+import { Globe, LogOut, Monitor, Moon, Sun } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
+import { useThemeStore, type ThemeMode } from '@/stores/theme-store';
 import { SettingEditor } from './setting-editor';
 import { useCategorySettings } from './use-category-settings';
 
 interface Props {
-  dark: boolean;
-  toggleDark: () => void;
   language: string;
   changeLanguage: (lang: string) => void;
   onLogout: () => void;
 }
 
 export function GeneralSettings({
-  dark,
-  toggleDark,
   language,
   changeLanguage,
   onLogout,
 }: Props) {
   const { t } = useTranslation();
+  const mode = useThemeStore((s) => s.mode);
+  const setMode = useThemeStore((s) => s.setMode);
   const runtimeSettings = useCategorySettings('general');
 
   return (
@@ -32,21 +31,25 @@ export function GeneralSettings({
         </h2>
         <div className="flex items-center justify-between rounded-lg border border-border bg-card/50 px-4 py-3">
           <div className="flex items-center gap-3">
-            {dark ? (
+            {mode === 'system' ? (
+              <Monitor className="h-4 w-4" />
+            ) : mode === 'dark' ? (
               <Moon className="h-4 w-4" />
             ) : (
               <Sun className="h-4 w-4" />
             )}
             <span className="text-sm">{t('Theme')}</span>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8"
-            onClick={toggleDark}
+          <select
+            aria-label={t('Theme')}
+            value={mode}
+            onChange={(event) => setMode(event.target.value as ThemeMode)}
+            className="h-8 rounded-md border border-input bg-background px-2 text-sm text-foreground"
           >
-            {dark ? t('Light mode') : t('Dark mode')}
-          </Button>
+            <option value="system">{t('Follow system')}</option>
+            <option value="light">{t('Light mode')}</option>
+            <option value="dark">{t('Dark mode')}</option>
+          </select>
         </div>
 
         <div className="flex items-center justify-between rounded-lg border border-border bg-card/50 px-4 py-3">

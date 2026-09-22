@@ -1,15 +1,18 @@
 /**
  * Shared theme state — single source of truth for dark mode.
  * Persisted to localStorage via Zustand persist middleware.
- * Falls back to system preference on first load.
+ * Stores the preference separately from the resolved color scheme.
  */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 const STORAGE_KEY = 'codex.webui.theme';
+const systemTheme = window.matchMedia('(prefers-color-scheme: dark)');
+
+export type ThemeMode = 'system' | 'light' | 'dark';
 
 function getSystemPrefersDark(): boolean {
-  return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  return systemTheme.matches;
 }
 
 function applyDarkClass(dark: boolean) {
@@ -40,31 +43,45 @@ function migrateLegacyStorage() {
 migrateLegacyStorage();
 
 interface ThemeState {
+  mode: ThemeMode;
   dark: boolean;
+  setMode: (mode: ThemeMode) => void;
   setDark: (dark: boolean) => void;
   toggleDark: () => void;
 }
 
 export const useThemeStore = create<ThemeState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
+      mode: 'system',
       dark: getSystemPrefersDark(),
 
-      setDark: (dark) => {
+      setMode: (mode) => {
+        const dark = mode === 'system' ? getSystemPrefersDark() : mode === 'dark';
         applyDarkClass(dark);
-        set({ dark });
+        set({ mode, dark });
       },
 
-      toggleDark: () =>
-        set((state) => {
-          const dark = !state.dark;
-          applyDarkClass(dark);
-          return { dark };
-        }),
+      setDark: (dark) => get().setMode(dark ? 'dark' : 'light'),
+      toggleDark: () => get().setDark(!get().dark),
     }),
     {
       name: STORAGE_KEY,
-      partialize: (state) => ({ dark: state.dark }),
+      partialize: (state) => ({ mode: state.mode }),
+      merge: (persisted, current) => {
+        const saved = persisted as { mode?: unknown; dark?: unknown } | null;
+        const mode: ThemeMode =
+          saved?.mode === 'system' || saved?.mode === 'light' || saved?.mode === 'dark'
+            ? saved.mode
+            : typeof saved?.dark === 'boolean'
+              ? saved.dark ? 'dark' : 'light'
+              : 'system';
+        return {
+          ...current,
+          mode,
+          dark: mode === 'system' ? getSystemPrefersDark() : mode === 'dark',
+        };
+      },
       onRehydrateStorage: () => (state) => {
         if (state) applyDarkClass(state.dark);
       },
@@ -74,3 +91,18 @@ export const useThemeStore = create<ThemeState>()(
 
 // Apply initial theme immediately (before rehydration completes)
 applyDarkClass(useThemeStore.getState().dark);
+
+// System changes only affect users who explicitly follow the system.
+function handleSystemThemeChange() {
+  if (useThemeStore.getState().mode !== 'system') return;
+  const dark = getSystemPrefersDark();
+  applyDarkClass(dark);
+  useThemeStore.setState({ dark });
+}
+
+systemTheme.addEventListener('change', handleSystemThemeChange);
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    systemTheme.removeEventListener('change', handleSystemThemeChange);
+  });
+}

@@ -6,7 +6,6 @@ import { useNavigate } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { useThemeStore } from '@/stores/theme-store';
 import { clearApiToken } from '@/auth-token';
 import { resetSocket } from '@/socket';
 import { sectionLabel } from './setting-helpers';
@@ -31,8 +30,6 @@ type SettingsSection = (typeof SECTIONS)[number];
 export function SettingsPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  const dark = useThemeStore((s) => s.dark);
-  const toggleDark = useThemeStore((s) => s.toggleDark);
   const [section, setSection] = useState<SettingsSection>('general');
 
   const handleLogout = () => {
@@ -61,8 +58,6 @@ export function SettingsPage() {
 
         {section === 'general' && (
           <GeneralSettings
-            dark={dark}
-            toggleDark={toggleDark}
             language={i18n.language}
             changeLanguage={(lang) => void i18n.changeLanguage(lang)}
             onLogout={handleLogout}

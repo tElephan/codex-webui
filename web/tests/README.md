@@ -4,6 +4,9 @@ Run the user-input regressions from the repository root:
 node --test web/tests/user-input.test.mjs
 ```
 
+Theme preference, system changes, and legacy storage migration:
+`node --test web/tests/theme-store.test.mjs`.
+
 These tests compile the real frontend modules with the installed Vite version. They cover question parsing, history hydration, streamed notifications, answer routing, failures, duplicate submissions, and read-only threads. No backend or API credentials are needed.
 
 For browser interaction checks:
