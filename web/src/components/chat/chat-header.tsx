@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Activity, Check, Edit3, EllipsisVertical, Globe, Menu, Moon, Network, PanelLeftOpen, Settings, Sun, X } from 'lucide-react';
+import { Activity, Check, Edit3, EllipsisVertical, Globe, Menu, Network, PanelLeftOpen, Settings, X } from 'lucide-react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { withBasePath } from '@/base-path';
 import { Button } from '@/components/ui/button';
+import { ThemeMenu } from '@/components/theme-menu';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
@@ -35,15 +36,11 @@ import { McpStatusBadge } from './mcp-status-badge';
 function MobileOverflowMenu({
   onDiagnostics,
   onToggleLanguage,
-  onToggleDark,
-  dark,
   languageLabel,
   t,
 }: {
   onDiagnostics: () => void;
   onToggleLanguage: () => void;
-  onToggleDark: () => void;
-  dark: boolean;
   languageLabel: string;
   t: (key: string) => string;
 }) {
@@ -63,22 +60,17 @@ function MobileOverflowMenu({
         <button type="button" onClick={() => act(onToggleLanguage)} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-accent">
           <Globe className="h-4 w-4" /> {languageLabel}
         </button>
-        <button type="button" onClick={() => act(onToggleDark)} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-accent">
-          {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-          {dark ? t('Light mode') : t('Dark mode')}
-        </button>
+        <ThemeMenu wide onSelect={() => setOpen(false)} />
       </PopoverContent>
     </Popover>
   );
 }
 
 interface Props {
-  dark: boolean;
-  onToggleDark: () => void;
   onToggleDiagnostics: () => void;
 }
 
-export function ChatHeader({ dark, onToggleDark, onToggleDiagnostics }: Props) {
+export function ChatHeader({ onToggleDiagnostics }: Props) {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const connected = useConnectionStore((s) => s.connected);
@@ -287,22 +279,13 @@ export function ChatHeader({ dark, onToggleDark, onToggleDiagnostics }: Props) {
               </TooltipTrigger>
               <TooltipContent>{i18n.language.startsWith('zh') ? 'English' : '简体中文'}</TooltipContent>
             </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button size="icon" variant="ghost" className="h-8 w-8" onClick={onToggleDark}>
-                  {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{dark ? t('Light mode') : t('Dark mode')}</TooltipContent>
-            </Tooltip>
+            <ThemeMenu />
           </>
         ) : (
           /* Mobile/Tablet: overflow menu popover */
           <MobileOverflowMenu
             onDiagnostics={handleDiagnosticsToggle}
             onToggleLanguage={toggleLanguage}
-            onToggleDark={onToggleDark}
-            dark={dark}
             languageLabel={i18n.language.startsWith('zh') ? 'English' : '简体中文'}
             t={t}
           />

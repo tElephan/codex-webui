@@ -38,6 +38,8 @@
   "Thread not found or cannot be opened.": "找不到会话或无法打开。",
   "Light mode": "浅色模式",
   "Follow system": "跟随系统",
+  "Path suggestions": "路径建议",
+  "Unable to load path suggestions": "无法加载路径建议",
   "Dark mode": "深色模式",
   "Close": "关闭",
   "Copy": "复制",

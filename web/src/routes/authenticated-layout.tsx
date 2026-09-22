@@ -30,7 +30,6 @@ import { useCodexSocket } from '@/hooks/use-codex-socket';
 import { useFilesStore } from '@/stores/files-store';
 import { useLayoutStore } from '@/stores/layout-store';
 import { useTimelineStore } from '@/stores/timeline-store';
-import { useThemeStore } from '@/stores/theme-store';
 import {
   ResizableHandle,
   ResizablePanel,
@@ -206,8 +205,6 @@ export function AuthenticatedLayout() {
   );
   const activateFilesContext = useFilesStore((s) => s.activateContext);
   const filesHydrated = useFilesStore((s) => s.hydrated);
-  const dark = useThemeStore((s) => s.dark);
-  const toggleDark = useThemeStore((s) => s.toggleDark);
   const generalSettingsQuery = useQuery({
     queryKey: settingsListSettingsQueryKey({ query: { category: 'general' } }),
     queryFn: async () => {
@@ -465,8 +462,6 @@ export function AuthenticatedLayout() {
   const mainContent = (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col isolate">
       <ChatHeader
-        dark={dark}
-        onToggleDark={toggleDark}
         onToggleDiagnostics={handleToggleDiagnostics}
       />
       <CodexStatusBanner />

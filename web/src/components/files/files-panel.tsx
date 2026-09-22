@@ -8,7 +8,6 @@ import { FileCode, FolderOpen, FolderTree, Loader2, X } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -36,6 +35,7 @@ import { cn } from '@/lib/utils';
 import { useFilesStore } from '@/stores/files-store';
 import { FileTree } from './file-tree';
 import { FileViewer } from './file-viewer';
+import { PathInput } from './path-input';
 
 /** Shared file tree header + tree component. */
 function FileTreeSidebar({
@@ -142,7 +142,13 @@ function OpenPathDialog({
         onOpenChange(nextOpen);
       }}
     >
-      <DialogContent>
+      <DialogContent onEscapeKeyDown={(event) => {
+        // Radix handles Escape during document capture, before the input can
+        // dismiss its own suggestions. Keep the dialog open for that first key.
+        if (event.target instanceof HTMLElement && event.target.matches('[role="combobox"][aria-expanded="true"]')) {
+          event.preventDefault();
+        }
+      }}>
         <form onSubmit={handleSubmit} className="contents">
           <DialogHeader>
             <DialogTitle>{t('Open path')}</DialogTitle>
@@ -151,17 +157,14 @@ function OpenPathDialog({
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <Input
+            <PathInput
               value={path}
-              onChange={(event) => {
-                setPath(event.target.value);
+              onChange={(value) => {
+                setPath(value);
                 if (error) setError('');
               }}
-              placeholder={t('Enter file or directory path...')}
-              autoFocus
-              spellCheck={false}
-              autoComplete="off"
-              aria-invalid={Boolean(error)}
+              disabled={openPath.isPending}
+              invalid={Boolean(error)}
             />
             {error && <p className="text-xs text-destructive">{error}</p>}
           </div>

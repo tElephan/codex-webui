@@ -7,6 +7,15 @@ node --test web/tests/user-input.test.mjs
 Theme preference, system changes, and legacy storage migration:
 `node --test web/tests/theme-store.test.mjs`.
 
+`http://127.0.0.1:5179/tests/fixtures/ui-controls.html` renders the actual header
+and FilesPanel for theme-menu and path-completion checks. Test all three themes
+on desktop and via the mobile overflow menu. In Open path, `/workspace/src`
+matches three folders; `/workspace/src/` lists its children. Check click,
+Arrow keys, Tab, Enter, Escape, paths with spaces, and an unavailable directory.
+Switch from `/workspace/slow/` to `/workspace/new/` before the delayed response
+arrives to check stale results. `window.uiControlsTest.requests` records all API
+calls; selecting a suggestion must not open a file until the form is submitted.
+
 These tests compile the real frontend modules with the installed Vite version. They cover question parsing, history hydration, streamed notifications, answer routing, failures, duplicate submissions, and read-only threads. No backend or API credentials are needed.
 
 For browser interaction checks:
