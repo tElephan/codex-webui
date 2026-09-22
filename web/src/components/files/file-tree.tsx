@@ -226,8 +226,7 @@ function FlatDirectory({ dirPath, selectedFile, onFileClick, onDirClick, openDia
           name={entry.name}
           path={entry.path}
           selected={entry.path === selectedFile}
-          onClick={() => entry.type === 'file' ? onFileClick(entry.path) : undefined}
-          onDoubleClick={() => entry.type === 'directory' ? onDirClick(entry.path) : undefined}
+          onClick={() => entry.type === 'directory' ? onDirClick(entry.path) : onFileClick(entry.path)}
           openDialog={openDialog}
           ops={ops}
           onUpload={onUpload}
@@ -245,13 +244,12 @@ interface TreeRowProps {
   path: string;
   selected: boolean;
   onClick: () => void;
-  onDoubleClick?: () => void;
   openDialog: (type: DialogState['type'], path: string, name: string, entryType: 'file' | 'directory') => void;
   ops: ReturnType<typeof useFileOperations>;
   onUpload: (files: FileList, destinationPath: string) => void;
 }
 
-function TreeRow({ icon, name, path: entryPath, selected, onClick, onDoubleClick, openDialog, ops, onUpload }: TreeRowProps) {
+function TreeRow({ icon, name, path: entryPath, selected, onClick, openDialog, ops, onUpload }: TreeRowProps) {
   const isDir = icon === 'directory';
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -331,8 +329,7 @@ function TreeRow({ icon, name, path: entryPath, selected, onClick, onDoubleClick
           role="button"
           tabIndex={0}
           onClick={onClick}
-          onDoubleClick={onDoubleClick}
-          onKeyDown={(e) => { if (e.key === 'Enter') { if (onDoubleClick) onDoubleClick(); else onClick(); } }}
+          onKeyDown={(e) => { if (e.key === 'Enter') onClick(); }}
           className="flex min-w-0 flex-1 cursor-default items-center gap-1.5 text-left"
         >
           {isDir ? (
