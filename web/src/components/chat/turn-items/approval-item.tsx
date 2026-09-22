@@ -106,6 +106,7 @@ export function ApprovalItem({ approval }: Props) {
 
   return (
     <div
+      data-request-id={String(approval.requestId)}
       className={cn(
         'rounded-lg border text-sm',
         isPending && 'border-yellow-500/50 bg-yellow-500/5',

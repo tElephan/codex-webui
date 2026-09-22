@@ -173,6 +173,9 @@ export function TurnBlock({ entry }: Props) {
   const userInputRequests = useTimelineStore((s) => s.userInputRequests);
   // Render user-input requests whose itemId doesn't match any existing turn item.
   const itemIds = new Set(entry.items.map((item) => item.itemId));
+  const unattachedApprovals = Object.values(approvals).filter(
+    (req) => req.turnId === entry.turnId && !itemIds.has(req.itemId),
+  );
   const unattachedInputs = Object.values(userInputRequests).filter(
     (req) => req.turnId === entry.turnId && !itemIds.has(req.itemId),
   );
@@ -234,6 +237,9 @@ export function TurnBlock({ entry }: Props) {
           );
         })}
 
+        {unattachedApprovals.map((approval) => (
+          <ApprovalItem key={String(approval.requestId)} approval={approval} />
+        ))}
         {unattachedInputs.map((req) => (
           <UserInputCard key={String(req.requestId)} request={req} />
         ))}
@@ -242,7 +248,7 @@ export function TurnBlock({ entry }: Props) {
 
         {entry.completed && <TurnTokenFooter turnId={entry.turnId} />}
 
-        {!entry.completed && visibleItems.length === 0 && !entry.plan && (
+        {!entry.completed && visibleItems.length === 0 && !entry.plan && unattachedInputs.length === 0 && unattachedApprovals.length === 0 && (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
             {t('Thinking...')}

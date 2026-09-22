@@ -6,22 +6,24 @@ import { UserInputForm } from './user-input-form';
 
 export function UserInputCard({ request }: { request: UserInputRequest }) {
   return (
-    <UserInputForm
-      questions={request.questions}
-      resolved={request.status !== 'pending'}
-      onSubmit={async (answers) => {
-        await pendingApprovalsRespond({
-          path: { requestId: String(request.requestId) },
-          body: { result: { answers } },
-          throwOnError: true,
-        });
-        useTimelineStore
-          .getState()
-          .resolveUserInputRequestForThread(
-            request.threadId,
-            request.requestId,
-          );
-      }}
-    />
+    <div data-request-id={String(request.requestId)}>
+      <UserInputForm
+        questions={request.questions}
+        resolved={request.status !== 'pending'}
+        onSubmit={async (answers) => {
+          await pendingApprovalsRespond({
+            path: { requestId: String(request.requestId) },
+            body: { result: { answers } },
+            throwOnError: true,
+          });
+          useTimelineStore
+            .getState()
+            .resolveUserInputRequestForThread(
+              request.threadId,
+              request.requestId,
+            );
+        }}
+      />
+    </div>
   );
 }

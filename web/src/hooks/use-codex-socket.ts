@@ -27,6 +27,8 @@ import {
 } from '@/lib/approval-parsers';
 import { userInputFromSocket } from '@/lib/user-input-parsers';
 import i18n from '@/i18n';
+import { syncThread, syncThreads } from '@/lib/thread-sync';
+import { useThreadSyncStore } from '@/stores/thread-sync-store';
 
 type CodexLifecycleEvent =
   | { type: 'appServerRestarting'; generation: number; delayMs: number }
@@ -53,10 +55,32 @@ export function useCodexSocket(enabled = true) {
     if (!enabled) return;
 
     const socket = getSocket();
+    let disposed = false;
+    const lastNotificationAt = new Map<string, number>();
+
+    const recover = (all = false) => {
+      if (!socket.connected || document.visibilityState === 'hidden') return;
+      const store = useTimelineStore.getState();
+      const ids = [...store.subscribedThreadIds].filter((threadId) => {
+        const runtime = store.getThreadRuntime(threadId);
+        return all || runtime?.activeTurnId || runtime?.loading || runtime?.threadStatus?.type === 'active';
+      });
+      if (store.threadId) ids.unshift(store.threadId);
+      // Wait for room joins before reading: events after the snapshot must reach us.
+      void Promise.all([...new Set(ids)].map((threadId) => new Promise<string | null>((resolve) => {
+        socket.timeout(5000).emit('thread.subscribe', { threadId }, (error: Error | null) => {
+          if (error && !disposed) useThreadSyncStore.getState().setStatus(threadId, 'error');
+          resolve(error ? null : threadId);
+        });
+      }))).then((joined) => {
+        if (!disposed && socket.connected) return syncThreads(joined.filter((id): id is string => id !== null));
+      });
+    };
 
     const handleConnect = () => {
       setConnected(true);
       useTimelineStore.getState().resubscribeAll();
+      recover(true);
     };
     const handleDisconnect = () => setConnected(false);
 
@@ -224,6 +248,8 @@ export function useCodexSocket(enabled = true) {
       method: string;
       params: Record<string, unknown>;
     }) => {
+      const tid = notification.params.threadId;
+      if (typeof tid === 'string') lastNotificationAt.set(tid, Date.now());
       handleNotification(notification.method, notification.params, ctx);
       if (notification.method === 'turn/completed') {
         const threadId = notification.params.threadId as string | undefined;
@@ -278,22 +304,16 @@ export function useCodexSocket(enabled = true) {
           i18n.t('Thread resumed after app-server restart.'),
           'info',
         );
+        const before = store.getThreadRuntime(threadId)!;
         // Restore full thread state via deduped resume, then hydrate dependent data sequentially.
         void threadsResumeThread({ path: { threadId } })
           .then(async ({ data }) => {
             if (!data) return;
-            store.hydrateTimelineForThread(
-              threadId,
-              data.thread.turns,
-              data.cwd,
-            );
-            store.setThreadStatusForThread(threadId, data.thread.status);
-            const activeTurn = data.thread.turns?.find(
-              (t: { status?: string }) => t.status === 'inProgress',
-            );
-            store.setActiveTurnIdForThread(threadId, activeTurn?.id ?? null);
-            store.setLoadingForThread(threadId, Boolean(activeTurn));
-            if (!activeTurn) void dispatchNextQueuedTurn(threadId);
+            if (!store.reconcileThreadSnapshot({ ...data.thread, cwd: data.cwd }, before)) {
+              void syncThread(threadId, true);
+              return;
+            }
+            void dispatchNextQueuedTurn(threadId);
             // Hydrate after timeline is in place to avoid race.
             const [tokenRes, diffRes, errorRes] = await Promise.allSettled([
               tokenUsageReadThreadTokenUsage({ path: { threadId } }),
@@ -413,7 +433,39 @@ export function useCodexSocket(enabled = true) {
 
     socket.on('codex.serverRequest', handleCodexServerRequest);
 
+    const handleForeground = () => {
+      if (document.visibilityState === 'hidden') return;
+      if (!socket.connected) socket.connect();
+      else recover();
+    };
+    window.addEventListener('focus', handleForeground);
+    window.addEventListener('online', handleForeground);
+    document.addEventListener('visibilitychange', handleForeground);
+    // A missed completion can leave the socket connected but the UI busy forever.
+    // Check quiet active threads and deferred/failed reads, without polling live deltas.
+    const recoveryTimer = window.setInterval(() => {
+      if (!socket.connected || document.visibilityState === 'hidden') return;
+      const store = useTimelineStore.getState();
+      const sync = useThreadSyncStore.getState();
+      const ids = new Set(store.subscribedThreadIds);
+      if (store.threadId) ids.add(store.threadId);
+      void syncThreads([...ids].filter((threadId) => {
+        const runtime = store.getThreadRuntime(threadId);
+        const status = sync.threads[threadId];
+        return (runtime?.loading || runtime?.activeTurnId || runtime?.threadStatus?.type === 'active' || status?.status === 'pending' || status?.status === 'error') &&
+          Date.now() - (lastNotificationAt.get(threadId) ?? 0) > 15_000 &&
+          Date.now() - (status?.checkedAt ?? 0) > 15_000;
+      }));
+    }, 15_000);
+    setConnected(socket.connected);
+    if (socket.connected) handleConnect();
+
     return () => {
+      disposed = true;
+      window.removeEventListener('focus', handleForeground);
+      window.removeEventListener('online', handleForeground);
+      document.removeEventListener('visibilitychange', handleForeground);
+      window.clearInterval(recoveryTimer);
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
       socket.off('codex.notification', handleCodexNotification);

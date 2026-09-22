@@ -16,7 +16,9 @@ import {
 } from '@/components/ui/resizable';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { useBreakpoint } from '@/hooks/use-breakpoint';
-import { useTimelineStore } from '@/stores/timeline-store';
+import { useTimelineStore, type ThreadRuntimeState } from '@/stores/timeline-store';
+import { syncThread } from '@/lib/thread-sync';
+import { useThreadSyncStore } from '@/stores/thread-sync-store';
 import { useFilesStore } from '@/stores/files-store';
 import { dispatchNextQueuedTurn } from '@/stores/queued-turn-store';
 import { showSnackbar } from '@/stores/snackbar-store';
@@ -68,9 +70,6 @@ export function ThreadView() {
   const hydrateTurnErrorsForThread = useTimelineStore(
     (s) => s.hydrateTurnErrorsForThread,
   );
-  const setThreadTitleForThread = useTimelineStore(
-    (s) => s.setThreadTitleForThread,
-  );
   const setThreadStatusForThread = useTimelineStore(
     (s) => s.setThreadStatusForThread,
   );
@@ -108,23 +107,19 @@ export function ThreadView() {
     setSessionPanelOpen(false);
   }, []);
 
-  const handleResumeSuccess = (res: ThreadResumeResponseDto) => {
+  const handleResumeSuccess = (res: ThreadResumeResponseDto, before?: ThreadRuntimeState | null) => {
     const tid = res.thread.id;
     useTimelineStore.getState().setThreadModeForThread(tid, 'live');
     useTimelineStore.getState().subscribeThread(tid);
-    const title = threadLabel(res.thread);
-    setThreadTitleForThread(tid, title);
-    hydrateTimelineForThread(tid, res.thread.turns, res.cwd);
-    // Restore active turn state so sidebar shows loading and input stays in steer mode.
-    setThreadStatusForThread(tid, res.thread.status);
-    const activeTurn = res.thread.turns.find((t) => t.status === 'inProgress');
-    if (activeTurn) {
-      setActiveTurnIdForThread(tid, activeTurn.id);
-      setLoadingForThread(tid, true);
-    } else {
-      setLoadingForThread(tid, false);
-      void dispatchNextQueuedTurn(tid);
+    const applied = before && useTimelineStore.getState().reconcileThreadSnapshot(
+      { ...res.thread, cwd: res.cwd }, before,
+    );
+    if (!applied) {
+      void syncThread(tid, true);
+      return;
     }
+    useThreadSyncStore.getState().setStatus(tid, 'idle');
+    void dispatchNextQueuedTurn(tid);
     void tokenUsageReadThreadTokenUsage({ path: { threadId: tid } })
       .then(({ data }) => data && hydrateTokenUsageForThread(tid, data.turns))
       .catch(() => undefined);
@@ -138,9 +133,11 @@ export function ThreadView() {
 
   const resumeThread = useMutation({
     ...threadsResumeThreadMutation(),
-    onSuccess: handleResumeSuccess,
+    onMutate: (vars) => useTimelineStore.getState().getThreadRuntime(vars.path.threadId),
+    onSuccess: (res, _vars, before) => handleResumeSuccess(res, before),
     onError: (err, vars) => {
       const failedId = vars.path.threadId;
+      useThreadSyncStore.getState().setStatus(failedId, 'error');
       setLoadingForThread(failedId, false);
       // Only attempt archived read if this thread is still selected.
       if (useTimelineStore.getState().threadId === failedId) {
@@ -216,6 +213,7 @@ export function ThreadView() {
   useEffect(() => {
     setActiveThread(threadId);
     setLoadingForThread(threadId, true);
+    useThreadSyncStore.getState().setStatus(threadId, 'syncing');
     resumeThread.mutate({ path: { threadId } });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadId]);

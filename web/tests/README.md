@@ -43,3 +43,15 @@ Verify that the styled page and its button work inside the sandbox, source edits
 appear when returning to preview without saving, and switching back preserves
 the draft. The preview must not set `document.body.dataset.previewEscaped` on
 the outer page; the iframe body should instead have `data-isolated="true"`.
+
+Response recovery regressions: `node --test web/tests/thread-sync.test.mjs`.
+They cover missed output/completion, stale reads racing live messages, changing
+conversations, optimistic messages, pending requests, retry, and queued follow-ups.
+
+`http://127.0.0.1:5179/tests/fixtures/response-status.html` mounts the actual socket
+hook, timeline and persistent activity banner with a local transport. Use
+`window.responseTest.disconnect()`, change `state.text` and `state.status` to
+`'completed'`, then call `connect()` or `foreground()` to verify recovery without
+submitting another turn. Set `state.fail = true` to exercise failed reads and the
+refresh button, and `setDark(true)` to inspect the mobile dark theme. All fixture
+API calls are recorded in `state.requests`; recovery should only issue GETs.

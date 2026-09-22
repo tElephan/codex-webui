@@ -59,6 +59,7 @@ import { SkillSelector } from './skill-selector';
 import { AttachmentChips } from './attachment-chips';
 import { MentionPopover } from './mention-popover';
 import { QueuedTurnList } from './queued-turn-list';
+import { ChatActivityStatus } from './chat-activity-status';
 
 function isNoActiveTurnError(message: string): boolean {
   return /no active turn to steer|active turn.*(?:mismatch|finished|not found)/i.test(
@@ -526,6 +527,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
   // ── Render ───────────────────────────────────────────────
   return (
     <footer className="glass-4 sticky bottom-0 z-10 px-3 py-2.5 sm:px-4 sm:py-3 lg:px-6">
+      <ChatActivityStatus />
       {inputDisabled && (
         <div className="mb-2 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
           <span className="min-w-0">

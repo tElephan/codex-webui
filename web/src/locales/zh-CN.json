@@ -726,5 +726,15 @@
   "Stop other client and take over": "结束其他客户端并接管",
   "Resume conversation": "继续会话",
   "error.threads.takeover_changed": "会话占用已变化或确认已过期，请刷新后重新确认。",
-  "error.threads.takeover_unavailable": "无法强制接管。请关闭占用此会话的其他 Codex 客户端后重试。"
+  "error.threads.takeover_unavailable": "无法强制接管。请关闭占用此会话的其他 Codex 客户端后重试。",
+  "Connection lost. Reconnecting…": "连接已断开，正在重新连接…",
+  "Could not sync conversation. Retry to get the latest response.": "会话同步失败，请重试以获取最新回答。",
+  "Waiting for your approval": "等待你确认操作",
+  "Waiting for your answer": "等待你回答问题",
+  "Syncing latest response…": "正在同步最新回答…",
+  "Thinking…": "正在思考…",
+  "Running tools…": "正在执行工具…",
+  "Response in progress…": "正在回答…",
+  "View request": "查看请求",
+  "Reconnect": "重新连接"
 }

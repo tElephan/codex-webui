@@ -93,7 +93,7 @@ function parseTurnItem(item: Record<string, unknown>): TurnItem | null {
         content: item.result
           ? JSON.stringify(item.result, null, 2).slice(0, 500)
           : '',
-        completed: true,
+        completed: item.status !== 'inProgress',
         toolServer: (item.server as string) ?? '',
         toolName: (item.tool as string) ?? '',
         toolArgs: item.arguments ? JSON.stringify(item.arguments, null, 2) : '',
@@ -150,7 +150,7 @@ function parseTurnItem(item: Record<string, unknown>): TurnItem | null {
         itemId: id,
         content:
           (item.aggregatedOutput as string) ?? (item.text as string) ?? '',
-        completed: true,
+        completed: item.status !== 'inProgress',
         command: item.command as string | undefined,
         exitCode: item.exitCode as number | undefined,
       };
@@ -160,7 +160,7 @@ function parseTurnItem(item: Record<string, unknown>): TurnItem | null {
         type: 'fileChange',
         itemId: id,
         content: (item.text as string) ?? '',
-        completed: true,
+        completed: item.status !== 'inProgress',
         filePath: changes?.[0]?.path,
         fileDiff: changes?.[0]?.diff ?? '',
       };
@@ -217,13 +217,13 @@ function turnsToTimeline(turns: TurnDto[]): TimelineEntry[] {
       .map(parseTurnItem)
       .filter((it): it is TurnItem => it !== null);
 
-    if (turnItems.length > 0 || plan) {
+    if (turnItems.length > 0 || plan || turn.status === 'inProgress') {
       entries.push({
         kind: 'turn',
         turnId: turn.id,
         plan,
         items: turnItems,
-        completed: turn.status === 'completed',
+        completed: turn.status !== 'inProgress',
       });
     }
   }
@@ -614,6 +614,11 @@ interface TimelineState {
     turns: TurnDto[],
     cwd?: string | null,
   ) => void;
+  /** Apply a server snapshot only if no newer timeline/activity arrived during the read. */
+  reconcileThreadSnapshot: (
+    thread: ThreadDto,
+    expected: ThreadRuntimeState,
+  ) => boolean;
   hydrateTokenUsageForThread: (
     threadId: string,
     turns: Array<{ turnId: string; usage: ThreadTokenUsage }>,
@@ -1107,6 +1112,63 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       }));
     },
 
+    reconcileThreadSnapshot: (thread, expected) => {
+      const runtime = get().getThreadRuntime(thread.id);
+      if (
+        !runtime ||
+        runtime.threadId !== expected.threadId ||
+        runtime.timeline !== expected.timeline ||
+        runtime.activeTurnId !== expected.activeTurnId ||
+        runtime.loading !== expected.loading ||
+        runtime.threadStatus !== expected.threadStatus ||
+        runtime.threadMode !== expected.threadMode ||
+        // A turn/start request may still be in flight. Keep its optimistic message.
+        (runtime.loading && !runtime.activeTurnId &&
+          runtime.timeline.some((entry) => entry.kind === 'user' && !entry.turnId))
+      ) return false;
+
+      const turns = thread.turns ?? [];
+      const snapshotTurnIds = new Set(turns.map((turn) => turn.id));
+      const existingTurns = new Map(runtime.timeline.flatMap((entry) =>
+        entry.kind === 'turn' ? [[entry.turnId, entry] as const] : [],
+      ));
+      // History can lag a just-finished turn. Never resurrect it or drop a live turn.
+      if ([...existingTurns.keys()].some((id) => !snapshotTurnIds.has(id)) ||
+        turns.some((turn) => turn.status === 'inProgress' && existingTurns.get(turn.id)?.completed)
+      ) return false;
+
+      const activeTurn = turns.findLast((turn) => turn.status === 'inProgress');
+      const timeline = turnsToTimeline(turns).map((entry) => {
+        if (entry.kind !== 'turn') return entry;
+        const previous = existingTurns.get(entry.turnId);
+        return previous ? {
+          ...entry,
+          plan: previous.plan ?? entry.plan,
+          diff: previous.diff ?? entry.diff,
+        } : entry;
+      });
+      // Preserve local errors/restart notices next to the turn they describe.
+      for (const entry of runtime.timeline) {
+        if (entry.kind !== 'system') continue;
+        const index = timeline.findLastIndex((candidate) =>
+          candidate.turnId === entry.turnId,
+        );
+        timeline.splice(index < 0 ? timeline.length : index + 1, 0, entry);
+      }
+      applyThreadUpdate(thread.id, (current) => ({
+        ...current,
+        timeline: ensureUserInputTurnEntries(timeline, current.userInputRequests),
+        threadCwd: thread.cwd ?? current.threadCwd,
+        threadTitle: thread.name ?? thread.preview ?? current.threadTitle,
+        // The summary is read before turn pages; its active flags may already be stale.
+        threadStatus: !activeTurn && thread.status.type === 'active' ? { type: 'idle' } : thread.status,
+        activeTurnId: activeTurn?.id ?? null,
+        loading: Boolean(activeTurn),
+        hydrated: true,
+      }));
+      return true;
+    },
+
     hydrateTokenUsageForThread: (threadId, turns) => {
       const byTurn: Record<string, ThreadTokenUsage> = {};
       for (const turn of turns) byTurn[turn.turnId] = turn.usage;
@@ -1291,6 +1353,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         if (alreadyResolved) pendingResolvedRequestIds.delete(requestKey);
         return {
           ...runtime,
+          timeline: ensureTurnEntry(runtime.timeline, approval.turnId),
           approvals: { ...runtime.approvals, [approval.itemId]: finalApproval },
           pendingResolvedRequestIds,
         };

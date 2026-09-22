@@ -184,6 +184,30 @@ export function ChatTimeline({ onEditMessage }: Props) {
 
   const virtualItems = virtualizer.getVirtualItems();
 
+  useEffect(() => {
+    let frame: number | undefined;
+    const showRequest = (event: Event) => {
+      const detail = (event as CustomEvent<{ threadId: string; turnId: string; requestId: string }>).detail;
+      if (detail?.threadId !== threadId) return;
+      const index = timeline.findIndex((entry) => entry.kind === 'turn' && entry.turnId === detail.turnId);
+      if (index < 0) return;
+      shouldAutoScroll.current = false;
+      virtualizer.scrollToIndex(index, { align: 'end' });
+      // The turn must first enter the virtualizer's rendered range.
+      const reveal = (attempts: number) => {
+        const card = scrollRef.current?.querySelector<HTMLElement>(`[data-request-id="${CSS.escape(detail.requestId)}"]`);
+        if (card) card.scrollIntoView({ block: 'center' });
+        else if (attempts > 0) frame = requestAnimationFrame(() => reveal(attempts - 1));
+      };
+      frame = requestAnimationFrame(() => reveal(3));
+    };
+    window.addEventListener('codex-webui:show-request', showRequest);
+    return () => {
+      window.removeEventListener('codex-webui:show-request', showRequest);
+      if (frame !== undefined) cancelAnimationFrame(frame);
+    };
+  }, [threadId, timeline, virtualizer]);
+
   // ── Empty states ────────────────────────────────────────────────────
   // Uses the same scroll container as the populated list: switching versions
   // passes through this state, and a gutter that appears and disappears with it

@@ -45,13 +45,8 @@ import {
   threadsResumeThread,
 } from '@/generated/api/sdk.gen';
 import { settingsListSettingsQueryKey } from '@/generated/api/@tanstack/react-query.gen';
-import type { PendingServerRequestDto } from '@/generated/api';
-import type { ApprovalRequest } from '@/types/approval';
-import {
-  parseAvailableDecisions,
-  parseStringArray,
-  parseNetworkAmendments,
-} from '@/lib/approval-parsers';
+import { approvalFromPending } from '@/lib/pending-requests';
+import { syncThread } from '@/lib/thread-sync';
 import { userInputFromPending } from '@/lib/user-input-parsers';
 
 const FilesPanel = lazy(() =>
@@ -113,53 +108,6 @@ function PersistentUtilityWindow({
   );
 }
 
-function approvalFromPending(
-  request: PendingServerRequestDto,
-): ApprovalRequest | null {
-  const params = request.params;
-  const turnId =
-    typeof params.turnId === 'string' ? params.turnId : request.turnId;
-  const itemId =
-    typeof params.itemId === 'string' ? params.itemId : request.itemId;
-  if (!turnId || !itemId || request.status !== 'pending') return null;
-
-  if (request.method === 'item/commandExecution/requestApproval') {
-    return {
-      requestId: request.requestId,
-      kind: 'commandExecution',
-      threadId: request.threadId,
-      turnId,
-      itemId,
-      status: 'pending',
-      command: (params.command as string) ?? null,
-      cwd: (params.cwd as string) ?? null,
-      reason: (params.reason as string) ?? null,
-      availableDecisions: parseAvailableDecisions(params.availableDecisions),
-      proposedExecpolicyAmendment: parseStringArray(
-        params.proposedExecpolicyAmendment,
-      ),
-      proposedNetworkPolicyAmendments: parseNetworkAmendments(
-        params.proposedNetworkPolicyAmendments,
-      ),
-    };
-  }
-
-  if (request.method === 'item/fileChange/requestApproval') {
-    return {
-      requestId: request.requestId,
-      kind: 'fileChange',
-      threadId: request.threadId,
-      turnId,
-      itemId,
-      status: 'pending',
-      reason: (params.reason as string) ?? null,
-      grantRoot: (params.grantRoot as string) ?? null,
-    };
-  }
-
-  return null;
-}
-
 function readMaxIdleSubscriptions(
   settings: Array<{ key: string; value: unknown }> | undefined,
 ): number {
@@ -183,19 +131,7 @@ export function AuthenticatedLayout() {
     (s) => s.addUserInputRequestForThread,
   );
   const ensureThreadState = useTimelineStore((s) => s.ensureThreadState);
-  const hydrateTimelineForThread = useTimelineStore(
-    (s) => s.hydrateTimelineForThread,
-  );
   const setLoadingForThread = useTimelineStore((s) => s.setLoadingForThread);
-  const setThreadStatusForThread = useTimelineStore(
-    (s) => s.setThreadStatusForThread,
-  );
-  const setActiveTurnIdForThread = useTimelineStore(
-    (s) => s.setActiveTurnIdForThread,
-  );
-  const setThreadTitleForThread = useTimelineStore(
-    (s) => s.setThreadTitleForThread,
-  );
   const setActiveThread = useTimelineStore((s) => s.setActiveThread);
   const setMaxIdleSubscriptions = useTimelineStore(
     (s) => s.setMaxIdleSubscriptions,
@@ -261,6 +197,7 @@ export function AuthenticatedLayout() {
           if (seen.has(tid)) continue;
           seen.add(tid);
 
+          if (useTimelineStore.getState().subscribedThreadIds.has(tid)) continue;
           ensureThreadState({ threadId: tid });
           setLoadingForThread(tid, true);
           socket.emit('thread.subscribe', { threadId: tid });
@@ -268,25 +205,14 @@ export function AuthenticatedLayout() {
             subscribedThreadIds: new Set(s.subscribedThreadIds).add(tid),
           }));
 
-          // Resume to get full thread state (dedup makes this safe).
+          // A socket notification can arrive before the resume response.
+          const before = useTimelineStore.getState().getThreadRuntime(tid)!;
           void threadsResumeThread({ path: { threadId: tid } })
             .then(({ data: resumeData }) => {
               if (cancelled || !resumeData) return;
-              hydrateTimelineForThread(
-                tid,
-                resumeData.thread.turns ?? [],
-                resumeData.cwd ?? resumeData.thread.cwd,
-              );
-              setThreadTitleForThread(
-                tid,
-                resumeData.thread.name ?? resumeData.thread.preview ?? null,
-              );
-              setThreadStatusForThread(tid, resumeData.thread.status);
-              const activeTurn = resumeData.thread.turns?.find(
-                (turn: { status?: string }) => turn.status === 'inProgress',
-              );
-              setActiveTurnIdForThread(tid, activeTurn?.id ?? null);
-              setLoadingForThread(tid, Boolean(activeTurn));
+              if (!useTimelineStore.getState().reconcileThreadSnapshot(
+                { ...resumeData.thread, cwd: resumeData.cwd }, before,
+              )) void syncThread(tid, true);
             })
             .catch(() => {
               if (!cancelled) setLoadingForThread(tid, false);
@@ -320,11 +246,7 @@ export function AuthenticatedLayout() {
     addApprovalForThread,
     addUserInputRequestForThread,
     ensureThreadState,
-    hydrateTimelineForThread,
-    setActiveTurnIdForThread,
     setLoadingForThread,
-    setThreadStatusForThread,
-    setThreadTitleForThread,
   ]);
 
   // Handle snackbar jump-to-thread actions.
