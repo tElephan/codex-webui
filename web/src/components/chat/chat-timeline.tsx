@@ -33,7 +33,7 @@ import { TurnBlock } from './turn-block';
 import { UserMessageBubble } from './user-message-bubble';
 
 /** Returns true if the scroll container is near the bottom. */
-function isNearBottom(el: HTMLElement, threshold = 120): boolean {
+function isNearBottom(el: HTMLElement, threshold = 2): boolean {
   return el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
 }
 
@@ -80,11 +80,13 @@ export function ChatTimeline({ onEditMessage }: Props) {
 
   // A turn cannot be branched while the conversation is busy, and the newest
   // user message has no turn id until `turn/started` arrives.
-  const canBranch = threadMode === 'live' && !loading && !createBranch.isPending;
+  const canBranch =
+    threadMode === 'live' && !loading && !createBranch.isPending;
 
   // ── Virtualizer ─────────────────────────────────────────────────────
   const scrollRef = useRef<HTMLDivElement>(null);
-  const prevCountRef = useRef(timeline.length);
+  const lastScrollTop = useRef(0);
+  const lastTouchY = useRef<number | null>(null);
   const shouldAutoScroll = useRef(true);
   const scrollFrameRef = useRef<number | null>(null);
   const initialScrollThreadRef = useRef<string | null>(null);
@@ -101,103 +103,109 @@ export function ChatTimeline({ onEditMessage }: Props) {
     initialOffset: () => Number.MAX_SAFE_INTEGER,
   });
 
-  // Track whether user is near bottom for auto-scroll decisions
+  // Only compensate for rows entirely above the viewport. A streamed turn can
+  // span many screens: growing its bottom must not move the text being read.
+  useEffect(() => {
+    virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (
+      item,
+      _delta,
+      instance,
+    ) => item.end <= (instance.scrollElement?.scrollTop ?? 0);
+    return () => {
+      virtualizer.shouldAdjustScrollPositionOnItemSizeChange = undefined;
+    };
+  }, [virtualizer]);
+
+  const pauseFollowing = useCallback(() => {
+    shouldAutoScroll.current = false;
+    if (scrollFrameRef.current !== null) {
+      cancelAnimationFrame(scrollFrameRef.current);
+      scrollFrameRef.current = null;
+    }
+  }, []);
+
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
-    if (el) {
-      const following = isNearBottom(el);
-      shouldAutoScroll.current = following;
-      if (!following && scrollFrameRef.current !== null) {
-        cancelAnimationFrame(scrollFrameRef.current);
-        scrollFrameRef.current = null;
-      }
+    if (!el) return;
+    const top = el.scrollTop;
+    if (top < lastScrollTop.current && !isNearBottom(el)) {
+      pauseFollowing();
+    } else if (top > lastScrollTop.current && isNearBottom(el)) {
+      // Resume only after reaching the bottom, not merely passing near it.
+      shouldAutoScroll.current = true;
     }
-  }, []);
+    lastScrollTop.current = top;
+  }, [pauseFollowing]);
 
-  // Cleanup pending animation frames
-  useEffect(() => {
-    return () => {
-      if (scrollFrameRef.current !== null) cancelAnimationFrame(scrollFrameRef.current);
-    };
-  }, []);
-
-  // Keep bottom pinned during streaming (content changes) and new entries.
-  // Smooth scroll for appended entries; instant jump for hydration (0→many).
-  useEffect(() => {
-    const previousCount = prevCountRef.current;
-    const appended = timeline.length > previousCount;
-    prevCountRef.current = timeline.length;
-
-    if (timeline.length === 0 || !shouldAutoScroll.current) return;
-
-    if (scrollFrameRef.current !== null) cancelAnimationFrame(scrollFrameRef.current);
-
+  // Use a native instant scroll. scrollToIndex keeps reconciling a moving last
+  // row (including after user input), which can pull the reader back down.
+  const scheduleFollow = useCallback(() => {
+    if (!shouldAutoScroll.current || scrollFrameRef.current !== null) return;
     scrollFrameRef.current = requestAnimationFrame(() => {
       scrollFrameRef.current = null;
-      if (!shouldAutoScroll.current) return;
-      virtualizer.scrollToIndex(timeline.length - 1, {
-        align: 'end',
-        behavior: previousCount > 0 && appended ? 'smooth' : 'auto',
-      });
+      const el = scrollRef.current;
+      if (!el || !shouldAutoScroll.current) return;
+      el.scrollTo({ top: el.scrollHeight, behavior: 'instant' });
+      lastScrollTop.current = el.scrollTop;
     });
-  }, [timeline, virtualizer]);
+  }, []);
 
-  // Scroll to the bottom once a thread first has content. Hydration and the
-  // first virtual-item measurements can happen across multiple frames, so
-  // repeat the correction while keeping the normal user-scroll behavior.
+  const totalSize = virtualizer.getTotalSize();
   useEffect(() => {
-    if (!threadId) {
-      initialScrollThreadRef.current = null;
-      return;
+    if (!threadId) initialScrollThreadRef.current = null;
+    else if (
+      timeline.length > 0 &&
+      initialScrollThreadRef.current !== threadId
+    ) {
+      initialScrollThreadRef.current = threadId;
+      shouldAutoScroll.current = true;
     }
-    if (timeline.length === 0 || initialScrollThreadRef.current === threadId) {
-      return;
-    }
+    // Run again after measurements or delayed content change a row's height.
+    // While paused, neither incoming text nor measurements schedule a scroll.
+    if (timeline.length > 0) scheduleFollow();
+  }, [threadId, timeline, totalSize, scheduleFollow]);
 
-    initialScrollThreadRef.current = threadId;
-    shouldAutoScroll.current = true;
-
-    const scrollToBottom = (force = false) => {
-      if (!force && !shouldAutoScroll.current) return;
-      virtualizer.scrollToIndex(timeline.length - 1, { align: 'end' });
-      const element = scrollRef.current;
-      if (element) element.scrollTop = element.scrollHeight;
-    };
-
-    let cancelled = false;
-    const correctAfterFrame = (framesRemaining: number) => {
-      if (cancelled || framesRemaining === 0) return;
-      requestAnimationFrame(() => {
-        if (cancelled) return;
-        scrollToBottom();
-        correctAfterFrame(framesRemaining - 1);
-      });
-    };
-
-    scrollToBottom(true);
-    correctAfterFrame(2);
-
-    return () => {
-      cancelled = true;
-    };
-  }, [threadId, timeline.length, virtualizer]);
+  useEffect(
+    () => () => {
+      if (scrollFrameRef.current !== null)
+        cancelAnimationFrame(scrollFrameRef.current);
+      scrollFrameRef.current = null;
+    },
+    [],
+  );
 
   const virtualItems = virtualizer.getVirtualItems();
 
   useEffect(() => {
     let frame: number | undefined;
     const showRequest = (event: Event) => {
-      const detail = (event as CustomEvent<{ threadId: string; turnId: string; requestId: string }>).detail;
+      const detail = (
+        event as CustomEvent<{
+          threadId: string;
+          turnId: string;
+          requestId: string;
+        }>
+      ).detail;
       if (detail?.threadId !== threadId) return;
-      const index = timeline.findIndex((entry) => entry.kind === 'turn' && entry.turnId === detail.turnId);
+      const index = timeline.findIndex(
+        (entry) => entry.kind === 'turn' && entry.turnId === detail.turnId,
+      );
       if (index < 0) return;
-      shouldAutoScroll.current = false;
+      pauseFollowing();
       virtualizer.scrollToIndex(index, { align: 'end' });
       // The turn must first enter the virtualizer's rendered range.
       const reveal = (attempts: number) => {
-        const card = scrollRef.current?.querySelector<HTMLElement>(`[data-request-id="${CSS.escape(detail.requestId)}"]`);
-        if (card) card.scrollIntoView({ block: 'center' });
-        else if (attempts > 0) frame = requestAnimationFrame(() => reveal(attempts - 1));
+        const card = scrollRef.current?.querySelector<HTMLElement>(
+          `[data-request-id="${CSS.escape(detail.requestId)}"]`,
+        );
+        if (card) {
+          card.scrollIntoView({ block: 'center', behavior: 'instant' });
+          // Stop following this row's end after revealing the request inside it.
+          virtualizer.scrollToOffset(scrollRef.current!.scrollTop);
+          lastScrollTop.current = scrollRef.current!.scrollTop;
+          pauseFollowing();
+        } else if (attempts > 0)
+          frame = requestAnimationFrame(() => reveal(attempts - 1));
       };
       frame = requestAnimationFrame(() => reveal(3));
     };
@@ -206,7 +214,7 @@ export function ChatTimeline({ onEditMessage }: Props) {
       window.removeEventListener('codex-webui:show-request', showRequest);
       if (frame !== undefined) cancelAnimationFrame(frame);
     };
-  }, [threadId, timeline, virtualizer]);
+  }, [threadId, timeline, virtualizer, pauseFollowing]);
 
   // ── Empty states ────────────────────────────────────────────────────
   // Uses the same scroll container as the populated list: switching versions
@@ -243,15 +251,62 @@ export function ChatTimeline({ onEditMessage }: Props) {
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]"
+        onWheel={(event) => {
+          if (event.deltaY < 0) pauseFollowing();
+          else if (event.deltaY > 0 && isNearBottom(event.currentTarget))
+            shouldAutoScroll.current = true;
+        }}
+        onTouchStart={(event) => {
+          lastTouchY.current = event.touches[0]?.clientY ?? null;
+        }}
+        onTouchMove={(event) => {
+          const y = event.touches[0]?.clientY;
+          if (
+            y !== undefined &&
+            lastTouchY.current !== null &&
+            y > lastTouchY.current
+          )
+            pauseFollowing();
+          else if (
+            y !== undefined &&
+            lastTouchY.current !== null &&
+            y < lastTouchY.current &&
+            isNearBottom(event.currentTarget)
+          )
+            shouldAutoScroll.current = true;
+          lastTouchY.current = y ?? null;
+        }}
+        onKeyDown={(event) => {
+          const target = event.target as HTMLElement;
+          if (
+            target.closest(
+              'input, textarea, select, button, [contenteditable="true"]',
+            )
+          )
+            return;
+          if (
+            ['ArrowUp', 'PageUp', 'Home'].includes(event.key) ||
+            (event.key === ' ' && event.shiftKey)
+          )
+            pauseFollowing();
+          else if (
+            ['ArrowDown', 'PageDown', 'End', ' '].includes(event.key) &&
+            isNearBottom(event.currentTarget)
+          )
+            shouldAutoScroll.current = true;
+        }}
+        tabIndex={0}
+        className="min-h-0 flex-1 overflow-y-auto [overflow-anchor:none] [scrollbar-gutter:stable]"
       >
         <div
           className="relative px-3 sm:px-4 lg:px-6"
-          style={{ height: `${virtualizer.getTotalSize()}px` }}
+          style={{ height: `${totalSize}px` }}
         >
           <div
             className="absolute left-0 top-0 w-full px-3 sm:px-4 lg:px-6"
-            style={{ transform: `translateY(${virtualItems[0]?.start ?? 0}px)` }}
+            style={{
+              transform: `translateY(${virtualItems[0]?.start ?? 0}px)`,
+            }}
           >
             {virtualItems.map((virtualItem) => {
               const entry = timeline[virtualItem.index];

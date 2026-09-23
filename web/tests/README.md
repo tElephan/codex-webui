@@ -55,3 +55,16 @@ hook, timeline and persistent activity banner with a local transport. Use
 submitting another turn. Set `state.fail = true` to exercise failed reads and the
 refresh button, and `setDark(true)` to inspect the mobile dark theme. All fixture
 API calls are recorded in `state.requests`; recovery should only issue GETs.
+
+Streaming scroll regression (run the fixture server above first):
+
+```sh
+agent-browser --session chat-scroll open http://127.0.0.1:5179/tests/fixtures/response-status.html
+agent-browser --session chat-scroll eval --stdin < web/tests/timeline-scroll.browser.js
+agent-browser --session chat-scroll close
+```
+
+Repeat after setting a mobile viewport and reloading. This exercises the actual
+virtualized timeline: small upward scrolls, reading within a growing turn,
+snapshot recovery, new turns, delayed layout, touch/keyboard input, cancellation
+of pending scrolling, returning to the bottom, and navigating to request cards.

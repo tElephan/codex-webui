@@ -1,9 +1,11 @@
 /** Real socket hook and status/turn components, with a local transport and REST snapshots. */
 import { createRoot } from 'react-dom/client';
+import { StrictMode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useCodexSocket } from '../../src/hooks/use-codex-socket';
 import { ChatActivityStatus } from '../../src/components/chat/chat-activity-status';
 import { ChatTimeline } from '../../src/components/chat/chat-timeline';
+import { TooltipProvider } from '../../src/components/ui/tooltip';
 import {
   createMemoryHistory,
   createRootRoute,
@@ -127,7 +129,11 @@ const router = createRouter({
   history: createMemoryHistory({ initialEntries: ['/'] }),
 });
 createRoot(document.getElementById('root')!).render(
-  <QueryClientProvider client={new QueryClient()}>
-    <RouterProvider router={router} />
-  </QueryClientProvider>,
+  <StrictMode>
+    <QueryClientProvider client={new QueryClient()}>
+      <TooltipProvider>
+        <RouterProvider router={router} />
+      </TooltipProvider>
+    </QueryClientProvider>
+  </StrictMode>,
 );
