@@ -1,6 +1,8 @@
 /** Renders attachment chips above the ChatInput textarea. */
 import { X, FileText, Image, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useTranslation } from 'react-i18next';
+import { unescapeMentionPath } from '@/lib/mention-utils';
 import type { ChatAttachment, ChatImageAttachment } from '@/types/attachments';
 
 interface Props {
@@ -15,13 +17,28 @@ export function AttachmentChips({ attachments, onRemove, className }: Props) {
   return (
     <div className={cn('flex flex-wrap gap-1.5 px-3 pb-1.5 pt-2', className)}>
       {attachments.map((att) => (
-        <ChipItem key={att.id} attachment={att} onRemove={() => onRemove(att.id)} />
+        <ChipItem
+          key={att.id}
+          attachment={att}
+          onRemove={() => onRemove(att.id)}
+        />
       ))}
     </div>
   );
 }
 
-function ChipItem({ attachment, onRemove }: { attachment: ChatAttachment; onRemove: () => void }) {
+function ChipItem({
+  attachment,
+  onRemove,
+}: {
+  attachment: ChatAttachment;
+  onRemove: () => void;
+}) {
+  const { t } = useTranslation();
+  const name =
+    attachment.type === 'mention'
+      ? unescapeMentionPath(attachment.displayName)
+      : attachment.name;
   const icon = chipIcon(attachment);
   const isImage = attachment.type === 'localImage' && attachment.previewUrl;
 
@@ -41,13 +58,12 @@ function ChipItem({ attachment, onRemove }: { attachment: ChatAttachment; onRemo
       ) : (
         <span className="text-muted-foreground">{icon}</span>
       )}
-      <span className="max-w-[140px] truncate">
-        {attachment.type === 'mention' ? attachment.displayName : attachment.name}
-      </span>
+      <span className="max-w-[140px] truncate">{name}</span>
       <button
         type="button"
+        aria-label={t('Remove attachment: {{name}}', { name })}
         onClick={onRemove}
-        className="ml-0.5 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground group-hover:opacity-100"
+        className="ml-0.5 flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-background hover:text-foreground"
       >
         <X className="h-3 w-3" />
       </button>

@@ -68,3 +68,16 @@ Repeat after setting a mobile viewport and reloading. This exercises the actual
 virtualized timeline: small upward scrolls, reading within a growing turn,
 snapshot recovery, new turns, delayed layout, touch/keyboard input, cancellation
 of pending scrolling, returning to the bottom, and navigating to request cards.
+
+Attachment picker checks (fixture uploads stay inside the browser):
+
+```sh
+agent-browser --session attachments set viewport 390 844
+agent-browser --session attachments open http://127.0.0.1:5179/tests/fixtures/attachments.html
+agent-browser --session attachments eval --stdin < web/tests/attachments.browser.js
+agent-browser --session attachments close
+```
+
+Exercises visible photo/file buttons, multi-select, upload progress and send
+blocking, image and file payloads, removal, retry, paste, read-only mode, and
+leaving a conversation during an upload. Reload before each repeat.

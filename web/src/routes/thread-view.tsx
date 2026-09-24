@@ -290,6 +290,7 @@ export function ThreadView() {
       )}
 
       <ChatInput
+        key={threadId}
         ref={chatInputRef}
         panelOpen={sessionPanelOpen}
         onTogglePanel={() => setSessionPanelOpen((o) => !o)}

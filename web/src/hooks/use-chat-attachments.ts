@@ -1,13 +1,18 @@
 /**
  * Manages ChatInput attachment state: file mentions, images, skills.
- * Handles paste, FileTree attach events, buildInput for turn/start, cleanup.
+ * Handles file picking, paste, FileTree attach events, turn inputs and cleanup.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clearApiToken, getAuthorizationHeader } from '@/auth-token';
 import { withBasePath } from '@/base-path';
 import { escapeMentionPath } from '@/lib/mention-utils';
-import type { ChatAttachment, ChatFileAttachment, ChatImageAttachment } from '@/types/attachments';
+import { getApiErrorMessage } from '@/lib/api-error';
+import type {
+  ChatAttachment,
+  ChatFileAttachment,
+  ChatImageAttachment,
+} from '@/types/attachments';
 
 let attachmentIdCounter = 0;
 function nextAttachmentId(): string {
@@ -24,7 +29,6 @@ interface UseChatAttachmentsParams {
   valueRef: React.RefObject<string>;
   setValue: React.Dispatch<React.SetStateAction<string>>;
   threadCwd: string | null;
-  addSystemError: (msg: string) => void;
 }
 
 export function useChatAttachments({
@@ -32,15 +36,32 @@ export function useChatAttachments({
   valueRef,
   setValue,
   threadCwd,
-  addSystemError,
 }: UseChatAttachmentsParams) {
   const { t } = useTranslation();
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const attachmentsRef = useRef(attachments);
-  useEffect(() => { attachmentsRef.current = attachments; }, [attachments]);
+  useEffect(() => {
+    attachmentsRef.current = attachments;
+  }, [attachments]);
+  const uploadController = useRef<AbortController | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  useEffect(
+    () => () => {
+      uploadController.current?.abort();
+      for (const attachment of attachmentsRef.current) {
+        if (attachment.type === 'localImage' && attachment.previewUrl)
+          URL.revokeObjectURL(attachment.previewUrl);
+      }
+    },
+    [],
+  );
 
   const threadCwdRef = useRef(threadCwd);
-  useEffect(() => { threadCwdRef.current = threadCwd; }, [threadCwd]);
+  useEffect(() => {
+    threadCwdRef.current = threadCwd;
+  }, [threadCwd]);
 
   /** Compute relative path from cwd. */
   const toRelativePath = useCallback((absolutePath: string) => {
@@ -52,34 +73,46 @@ export function useChatAttachments({
   }, []);
 
   /** Insert text at the current cursor position in the textarea. */
-  const insertAtCursor = useCallback((text: string) => {
-    const textarea = textareaRef.current;
-    const currentValue = valueRef.current;
-    if (!textarea) {
-      setValue(currentValue + text);
-      return;
-    }
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const newValue = currentValue.slice(0, start) + text + currentValue.slice(end);
-    setValue(newValue);
-    const newPos = start + text.length;
-    setTimeout(() => {
-      textarea.focus();
-      textarea.setSelectionRange(newPos, newPos);
-    }, 0);
-  }, [textareaRef, valueRef, setValue]);
+  const insertAtCursor = useCallback(
+    (text: string) => {
+      const textarea = textareaRef.current;
+      const currentValue = valueRef.current;
+      if (!textarea) {
+        setValue(currentValue + text);
+        return;
+      }
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const newValue =
+        currentValue.slice(0, start) + text + currentValue.slice(end);
+      setValue(newValue);
+      const newPos = start + text.length;
+      setTimeout(() => {
+        textarea.focus();
+        textarea.setSelectionRange(newPos, newPos);
+      }, 0);
+    },
+    [textareaRef, valueRef, setValue],
+  );
 
   /** Add a file mention: insert @displayName at cursor + track metadata. */
   /** Add a file mention: escape spaces, insert @path at cursor, track metadata. */
-  const addFileMention = useCallback((displayName: string, absolutePath: string) => {
-    const escaped = escapeMentionPath(displayName);
-    insertAtCursor(`@${escaped} `);
-    setAttachments((prev) => [
-      ...prev,
-      { type: 'mention', id: nextAttachmentId(), displayName: escaped, path: absolutePath } as ChatFileAttachment,
-    ]);
-  }, [insertAtCursor]);
+  const addFileMention = useCallback(
+    (displayName: string, absolutePath: string) => {
+      const escaped = escapeMentionPath(displayName);
+      insertAtCursor(`@${escaped} `);
+      setAttachments((prev) => [
+        ...prev,
+        {
+          type: 'mention',
+          id: nextAttachmentId(),
+          displayName: escaped,
+          path: absolutePath,
+        } as ChatFileAttachment,
+      ]);
+    },
+    [insertAtCursor],
+  );
 
   // Listen for external "attach file" events from FileTree context menu
   useEffect(() => {
@@ -100,6 +133,7 @@ export function useChatAttachments({
    */
   const buildInput = useCallback(() => {
     const input: Array<Record<string, unknown>> = [];
+    if (uploadController.current) return input;
     const currentAttachments = attachmentsRef.current;
     let currentText = valueRef.current.trim();
 
@@ -110,12 +144,14 @@ export function useChatAttachments({
       .sort((a, b) => b.displayName.length - a.displayName.length);
     for (const mention of fileMentions) {
       const pattern = new RegExp(
-        `(^|\\s)@${escapeRegExp(mention.displayName)}(?=$|\\s)`, 'g',
+        `(^|\\s)@${escapeRegExp(mention.displayName)}(?=$|\\s)`,
+        'g',
       );
       // Escape spaces in absolute path too so backend regex can parse it
       const escapedAbsPath = escapeMentionPath(mention.path);
       currentText = currentText.replace(
-        pattern, (_match, prefix: string) => `${prefix}@${escapedAbsPath}`,
+        pattern,
+        (_match, prefix: string) => `${prefix}@${escapedAbsPath}`,
       );
     }
 
@@ -138,107 +174,160 @@ export function useChatAttachments({
   /** Clear attachments and text after sending. */
   const clearAfterSend = useCallback(() => {
     for (const att of attachmentsRef.current) {
-      if (att.type === 'localImage' && (att as ChatImageAttachment).previewUrl) {
+      if (
+        att.type === 'localImage' &&
+        (att as ChatImageAttachment).previewUrl
+      ) {
         URL.revokeObjectURL((att as ChatImageAttachment).previewUrl!);
       }
     }
     setValue('');
     setAttachments([]);
+    setUploadError(null);
   }, [setValue]);
 
   /** Upload a file via direct fetch (SDK serializes body as JSON, multipart needs raw FormData). */
-  const uploadFile = useCallback(async (file: File): Promise<{ path: string } | null> => {
-    const formData = new FormData();
-    formData.append('file', file, file.name || 'pasted-file');
-    const authorization = getAuthorizationHeader();
-    const resp = await fetch(withBasePath('/api/chat/upload'), {
-      method: 'POST',
-      headers: authorization ? { Authorization: authorization } : {},
-      body: formData,
-    });
-    if (!resp.ok) {
-      if (resp.status === 401) {
-        clearApiToken();
-        window.dispatchEvent(new Event('codex-webui:auth-expired'));
-      }
-      const err = await resp.json().catch(() => undefined);
-      const msg = (err as { message?: string })?.message;
-      throw new Error(msg || `Upload failed: ${resp.status}`);
-    }
-    return (await resp.json()) as { path: string };
-  }, []);
-
-  /** Paste handler: images → chip, files → @filename at cursor. */
-  const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
-    const items = e.clipboardData?.items;
-    if (!items) return;
-
-    const fileItems: DataTransferItem[] = [];
-    for (let i = 0; i < items.length; i++) {
-      if (items[i].kind === 'file') fileItems.push(items[i]);
-    }
-    if (fileItems.length === 0) return;
-    e.preventDefault();
-
-    for (const item of fileItems) {
-      const file = item.getAsFile();
-      if (!file) continue;
-
-      try {
-        const data = await uploadFile(file);
-        if (!data) continue;
-
-        if (file.type.startsWith('image/')) {
-          const previewUrl = URL.createObjectURL(file);
-          setAttachments((prev) => [
-            ...prev,
-            {
-              type: 'localImage', id: nextAttachmentId(),
-              name: file.name || 'image', path: data.path, previewUrl,
-            } as ChatImageAttachment,
-          ]);
-        } else {
-          const fileName = file.name || 'pasted-file';
-          const escapedName = escapeMentionPath(fileName);
-          insertAtCursor(`@${escapedName} `);
-          setAttachments((prev) => [
-            ...prev,
-            { type: 'mention', id: nextAttachmentId(), displayName: escapedName, path: data.path } as ChatFileAttachment,
-          ]);
+  const uploadFile = useCallback(
+    async (file: File, signal: AbortSignal): Promise<{ path: string }> => {
+      const formData = new FormData();
+      formData.append('file', file, file.name || 'pasted-file');
+      const authorization = getAuthorizationHeader();
+      const resp = await fetch(withBasePath('/api/chat/upload'), {
+        method: 'POST',
+        headers: authorization ? { Authorization: authorization } : {},
+        body: formData,
+        signal,
+      });
+      if (!resp.ok) {
+        if (resp.status === 401) {
+          clearApiToken();
+          window.dispatchEvent(new Event('codex-webui:auth-expired'));
         }
-      } catch {
-        addSystemError(t('Failed to upload pasted file'));
+        const err = await resp.json().catch(() => undefined);
+        throw new Error(getApiErrorMessage(err, t('Upload failed')));
       }
-    }
-  }, [addSystemError, t, insertAtCursor, uploadFile]);
+      return (await resp.json()) as { path: string };
+    },
+    [t],
+  );
+
+  /** Shared by the image picker, file picker and clipboard. */
+  const uploadFiles = useCallback(
+    async (files: File[]) => {
+      if (!files.length || uploadController.current) return;
+      const controller = new AbortController();
+      uploadController.current = controller;
+      setUploading(true);
+      setUploadError(null);
+      const failures: string[] = [];
+      try {
+        for (const file of files) {
+          try {
+            const data = await uploadFile(file, controller.signal);
+            if (controller.signal.aborted) return;
+            if (file.type.startsWith('image/')) {
+              const previewUrl = URL.createObjectURL(file);
+              setAttachments((prev) => [
+                ...prev,
+                {
+                  type: 'localImage',
+                  id: nextAttachmentId(),
+                  name: file.name || 'image',
+                  path: data.path,
+                  previewUrl,
+                },
+              ]);
+            } else {
+              const escapedName = escapeMentionPath(file.name || 'file');
+              // Functional updates preserve text typed while a multi-file upload is running.
+              setValue(
+                (current) =>
+                  `${current}${current && !/\s$/.test(current) ? ' ' : ''}@${escapedName} `,
+              );
+              setAttachments((prev) => [
+                ...prev,
+                {
+                  type: 'mention',
+                  id: nextAttachmentId(),
+                  displayName: escapedName,
+                  path: data.path,
+                  uploaded: true,
+                },
+              ]);
+            }
+          } catch (error) {
+            if (controller.signal.aborted) return;
+            failures.push(
+              `${file.name}: ${getApiErrorMessage(error, t('Upload failed'))}`,
+            );
+          }
+        }
+        if (failures.length) setUploadError(failures.join('\n'));
+      } finally {
+        if (!controller.signal.aborted) {
+          uploadController.current = null;
+          setUploading(false);
+        }
+      }
+    },
+    [setValue, t, uploadFile],
+  );
+
+  /** Paste handler: images → chip, files → @filename and chip. */
+  const handlePaste = useCallback(
+    async (e: React.ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      const files: File[] = [];
+      for (let i = 0; i < items.length; i++) {
+        const file = items[i].kind === 'file' ? items[i].getAsFile() : null;
+        if (file) files.push(file);
+      }
+      if (files.length === 0) return;
+      e.preventDefault();
+      await uploadFiles(files);
+    },
+    [uploadFiles],
+  );
 
   /** Remove attachment. For file mentions, also remove @displayName from text. */
-  const handleRemoveAttachment = useCallback((id: string) => {
-    setAttachments((prev) => {
-      const att = prev.find((a) => a.id === id);
-      if (!att) return prev.filter((a) => a.id !== id);
-
-      if (att.type === 'localImage' && (att as ChatImageAttachment).previewUrl) {
-        URL.revokeObjectURL((att as ChatImageAttachment).previewUrl!);
+  const handleRemoveAttachment = useCallback(
+    (id: string) => {
+      const att = attachmentsRef.current.find((a) => a.id === id);
+      if (att?.type === 'localImage' && att.previewUrl)
+        URL.revokeObjectURL(att.previewUrl);
+      if (att?.type === 'mention') {
+        const pattern = new RegExp(
+          `(^|\\s)@${escapeRegExp(att.displayName)}(?=$|\\s)`,
+          'g',
+        );
+        setValue((value) => value.replace(pattern, '$1').trim());
       }
-      if (att.type === 'mention') {
-        const fileAtt = att as ChatFileAttachment;
-        const pattern = new RegExp(`\\s?@${escapeRegExp(fileAtt.displayName)}\\s?`, 'g');
-        setValue((v: string) => v.replace(pattern, ' ').trim());
-      }
-      return prev.filter((a) => a.id !== id);
-    });
-  }, [setValue]);
+      setAttachments((prev) => prev.filter((a) => a.id !== id));
+    },
+    [setValue],
+  );
 
-  const handleSkillSelect = useCallback((skill: { name: string; path: string }) => {
-    setAttachments((prev) => [
-      ...prev,
-      { type: 'skill', id: nextAttachmentId(), name: skill.name, path: skill.path },
-    ]);
-  }, []);
+  const handleSkillSelect = useCallback(
+    (skill: { name: string; path: string }) => {
+      setAttachments((prev) => [
+        ...prev,
+        {
+          type: 'skill',
+          id: nextAttachmentId(),
+          name: skill.name,
+          path: skill.path,
+        },
+      ]);
+    },
+    [],
+  );
 
-  // Only show chips for images and skills (file mentions are inline in text)
-  const chipAttachments = attachments.filter((a) => a.type !== 'mention');
+  // Workspace mentions stay inline; uploaded files have removable chips too.
+  const chipAttachments = attachments.filter(
+    (a) => a.type !== 'mention' || a.uploaded,
+  );
 
   return {
     attachments,
@@ -248,6 +337,9 @@ export function useChatAttachments({
     buildInput,
     clearAfterSend,
     handlePaste,
+    uploadFiles,
+    uploading,
+    uploadError,
     addFileMention,
     handleRemoveAttachment,
     handleSkillSelect,

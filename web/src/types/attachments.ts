@@ -17,6 +17,8 @@ export interface ChatFileAttachment {
   displayName: string;
   /** Absolute path for Codex (e.g., "/project/src/main.ts"). */
   path: string;
+  /** Browser-uploaded files also show a removable attachment chip. */
+  uploaded?: boolean;
 }
 
 /** Image attachment (from paste/upload, stored via chat/upload endpoint). */

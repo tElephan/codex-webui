@@ -736,5 +736,10 @@
   "Running tools…": "正在执行工具…",
   "Response in progress…": "正在回答…",
   "View request": "查看请求",
-  "Reconnect": "重新连接"
+  "Reconnect": "重新连接",
+  "Upload images": "上传图片",
+  "Images": "图片",
+  "Uploading attachments…": "正在上传附件…",
+  "Remove attachment: {{name}}": "移除附件：{{name}}",
+  "Send": "发送"
 }

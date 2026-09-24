@@ -14,9 +14,11 @@ import {
   ChevronUp,
   CornerDownLeft,
   GitFork,
+  ImagePlus,
   ListPlus,
   Loader2,
   MessageSquarePlus,
+  Paperclip,
   Send,
   Square,
   TerminalSquare,
@@ -109,6 +111,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
     valueRef.current = value;
   }, [value]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { t } = useTranslation();
   const threadCwd = useTimelineStore((s) => s.threadCwd);
@@ -169,6 +173,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
     buildInput,
     clearAfterSend,
     handlePaste,
+    uploadFiles,
+    uploading,
+    uploadError,
     addFileMention,
     handleRemoveAttachment,
     handleSkillSelect,
@@ -178,7 +185,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
     valueRef,
     setValue,
     threadCwd,
-    addSystemError,
   });
 
   // ── Mention hook ─────────────────────────────────────────
@@ -625,8 +631,78 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
             rows={1}
             className="max-h-40 min-h-20 resize-none overflow-y-auto border-none bg-transparent pr-4 pt-2.5 shadow-none focus-visible:ring-0"
           />
-          <div className="flex items-center justify-between px-2 pb-2">
-            <div className="flex items-center gap-1">
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            hidden
+            aria-label={t('Upload images')}
+            disabled={!threadId || inputDisabled || uploading}
+            onChange={(event) => {
+              const files = Array.from(event.currentTarget.files ?? []);
+              event.currentTarget.value = '';
+              void uploadFiles(files);
+            }}
+          />
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            hidden
+            aria-label={t('Upload files')}
+            disabled={!threadId || inputDisabled || uploading}
+            onChange={(event) => {
+              const files = Array.from(event.currentTarget.files ?? []);
+              event.currentTarget.value = '';
+              void uploadFiles(files);
+            }}
+          />
+          <div className="flex flex-wrap items-center gap-1 px-2 pb-1">
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-10 gap-1.5 px-3 text-xs sm:h-8"
+              aria-label={t('Upload images')}
+              disabled={!threadId || inputDisabled || uploading}
+              onClick={() => imageInputRef.current?.click()}
+            >
+              <ImagePlus className="h-4 w-4" />
+              {t('Images')}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-10 gap-1.5 px-3 text-xs sm:h-8"
+              aria-label={t('Upload files')}
+              disabled={!threadId || inputDisabled || uploading}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Paperclip className="h-4 w-4" />
+              {t('Files')}
+            </Button>
+            {uploading && (
+              <span
+                role="status"
+                className="flex items-center gap-1.5 text-xs text-muted-foreground"
+              >
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                {t('Uploading attachments…')}
+              </span>
+            )}
+          </div>
+          {uploadError && (
+            <p
+              role="alert"
+              className="whitespace-pre-wrap break-words px-3 pb-2 text-xs text-destructive"
+            >
+              {uploadError}
+            </p>
+          )}
+          <div className="flex flex-wrap items-center justify-between gap-y-2 px-2 pb-2">
+            <div className="flex flex-wrap items-center gap-1">
               <ModelSelector />
               <SecurityPolicyBadge />
               <McpStatusBadge />
@@ -660,7 +736,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
                       <Button
                         size="sm"
                         className="h-7 w-7 rounded-lg px-0 text-xs transition-transform duration-200 hover:scale-105 active:scale-95 sm:w-auto sm:px-2.5"
-                        disabled={!hasContent || steer.isPending}
+                        disabled={!hasContent || steer.isPending || uploading}
                         title={t('Follow up')}
                       >
                         <MessageSquarePlus className="h-3.5 w-3.5" />
@@ -734,8 +810,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
                   size="icon"
                   className="h-7 w-7 rounded-lg transition-transform duration-200 hover:scale-105 active:scale-95"
                   disabled={
-                    !threadId || !hasContent || loading || inputDisabled
+                    !threadId ||
+                    !hasContent ||
+                    loading ||
+                    inputDisabled ||
+                    uploading
                   }
+                  aria-label={t('Send')}
                   onClick={handleSend}
                 >
                   <Send className="h-3.5 w-3.5" />
