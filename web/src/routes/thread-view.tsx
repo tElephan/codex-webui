@@ -249,7 +249,7 @@ export function ThreadView() {
           >
             <div className="flex h-full flex-col">
               <ChatTimeline
-                key={threadId}
+                key={`timeline:${threadId}`}
                 onEditMessage={(v) => chatInputRef.current?.sendInput(v)}
               />
             </div>
@@ -265,7 +265,7 @@ export function ThreadView() {
         </ResizablePanelGroup>
       ) : (
         <ChatTimeline
-          key={threadId}
+          key={`timeline:${threadId}`}
           onEditMessage={(v) => chatInputRef.current?.sendInput(v)}
         />
       )}
@@ -290,7 +290,7 @@ export function ThreadView() {
       )}
 
       <ChatInput
-        key={threadId}
+        key={`input:${threadId}`}
         ref={chatInputRef}
         panelOpen={sessionPanelOpen}
         onTogglePanel={() => setSessionPanelOpen((o) => !o)}

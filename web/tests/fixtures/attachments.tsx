@@ -110,9 +110,9 @@ export function Fixture() {
     <main className="flex h-full overflow-hidden bg-background">
       <div className="isolate flex min-h-0 min-w-0 flex-1 flex-col">
         <ChatHeader onToggleDiagnostics={() => {}} />
-        <ChatTimeline key={threadId} />
+        <ChatTimeline key={`timeline:${threadId}`} />
         <ChatInput
-          key={threadId}
+          key={`input:${threadId}`}
           panelOpen={false}
           onTogglePanel={() => {}}
           onForkReadOnly={() => {}}
