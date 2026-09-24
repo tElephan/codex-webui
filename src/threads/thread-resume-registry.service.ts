@@ -103,6 +103,7 @@ export class ThreadResumeRegistryService {
     this.responseCache.set(threadId, {
       turnsBackwardsCursor: null,
       itemsBackwardsCursor: null,
+      collaborationMode: null,
       ...response,
     });
   }

@@ -18,7 +18,7 @@ describe('ThreadResumeRegistryService response compatibility', () => {
   });
 
   it.each(['start', 'fork'] as const)(
-    'accepts a %s response without resume-only cursors',
+    'accepts a %s response without resume-only settings or cursors',
     async () => {
       const thread = { id: 'thread1', cwd: '/workspace', turns: [] };
       const response = {
@@ -39,6 +39,7 @@ describe('ThreadResumeRegistryService response compatibility', () => {
 
       await expect(registry.ensureResumed(thread.id)).resolves.toEqual({
         ...response,
+        collaborationMode: null,
         turnsBackwardsCursor: null,
         itemsBackwardsCursor: null,
       });
@@ -49,6 +50,28 @@ describe('ThreadResumeRegistryService response compatibility', () => {
       });
     },
   );
+
+  it('keeps the collaboration mode returned by resume when caching its settings', async () => {
+    const thread = { id: 'thread1', cwd: '/workspace', turns: [] };
+    const response = {
+      thread,
+      collaborationMode: {
+        mode: 'plan',
+        settings: {
+          model: 'gpt-6-sol',
+          reasoning_effort: 'high',
+          developer_instructions: null,
+        },
+      },
+    } as v2.ThreadResumeResponse;
+    registry.markResumed(thread.id);
+    registry.cacheResponse(thread.id, response);
+    codex.request.mockResolvedValue({ thread });
+
+    await expect(registry.ensureResumed(thread.id)).resolves.toMatchObject({
+      collaborationMode: response.collaborationMode,
+    });
+  });
 
   it('preserves initial resume cursors but clears them after a full read', async () => {
     const thread = { id: 'thread1', cwd: '/workspace', turns: [] };
