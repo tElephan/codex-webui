@@ -51,7 +51,7 @@ export function CodexStatusBanner() {
 
   return (
     <div
-      className={`flex items-center gap-2 px-4 py-2 text-sm ${
+      className={`flex shrink-0 items-center gap-2 px-4 py-2 text-sm ${
         isDegraded
           ? 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-400'
           : 'bg-destructive/10 text-destructive'

@@ -532,300 +532,303 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
 
   // ── Render ───────────────────────────────────────────────
   return (
-    <footer className="glass-4 sticky bottom-0 z-10 px-3 py-2.5 sm:px-4 sm:py-3 lg:px-6">
-      <ChatActivityStatus />
-      {inputDisabled && (
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
-          <span className="min-w-0">
-            {writerConflict
-              ? t(
-                  'This conversation is active in another Codex client. Take it over here or continue in a new branch.',
-                )
-              : t(
-                  'Archived threads are read-only. Unarchive or fork to continue.',
-                )}
-          </span>
-          <div className="flex shrink-0 flex-wrap gap-2">
-            {writerConflict && (
+    <div className="relative z-10 flex max-h-[60%] min-h-0 shrink-0 flex-col">
+      {/* Keep suggestions outside the scrolling composer so they can open above it. */}
+      <MentionPopover
+        open={mentionOpen}
+        browseRelative={browseRelative}
+        filtered={mentionFiltered}
+        isLoading={mentionLoading}
+        selectedIndex={mentionSelectedIndex}
+        onSelect={handleMentionSelect}
+        onNavigate={handleMentionNavigate}
+        onNavigateUp={handleMentionNavigateUp}
+        className="left-3 sm:left-4 lg:left-6"
+      />
+      <footer className="glass-4 min-h-0 overflow-y-auto overscroll-contain px-3 py-2.5 sm:px-4 sm:py-3 lg:px-6">
+        <ChatActivityStatus />
+        {inputDisabled && (
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+            <span className="min-w-0">
+              {writerConflict
+                ? t(
+                    'This conversation is active in another Codex client. Take it over here or continue in a new branch.',
+                  )
+                : t(
+                    'Archived threads are read-only. Unarchive or fork to continue.',
+                  )}
+            </span>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              {writerConflict && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 px-2.5 text-xs"
+                  onClick={onTakeover}
+                  disabled={forkPending}
+                >
+                  {t('Force takeover')}
+                </Button>
+              )}
               <Button
                 size="sm"
                 variant="outline"
-                className="h-7 px-2.5 text-xs"
-                onClick={onTakeover}
+                className="h-7 shrink-0 gap-1.5 px-2.5 text-xs"
                 disabled={forkPending}
+                onClick={onForkReadOnly}
               >
-                {t('Force takeover')}
+                {forkPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <GitFork className="h-3.5 w-3.5" />
+                )}
+                {t('Continue in a branch')}
               </Button>
-            )}
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 shrink-0 gap-1.5 px-2.5 text-xs"
-              disabled={forkPending}
-              onClick={onForkReadOnly}
-            >
-              {forkPending ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <GitFork className="h-3.5 w-3.5" />
-              )}
-              {t('Continue in a branch')}
-            </Button>
+            </div>
           </div>
-        </div>
-      )}
-      <QueuedTurnList
-        threadId={threadId}
-        canSendNow={
-          !inputDisabled &&
-          !steer.isPending &&
-          (hasActiveTurn ? canSteer : !loading)
-        }
-        onSendNow={handleSendQueued}
-      />
-      <div className="relative">
-        <AttachmentChips
-          attachments={chipAttachments}
-          onRemove={handleRemoveAttachment}
-          className="rounded-t-xl border border-b-0 border-border/40 bg-background/40"
+        )}
+        <QueuedTurnList
+          threadId={threadId}
+          canSendNow={
+            !inputDisabled &&
+            !steer.isPending &&
+            (hasActiveTurn ? canSteer : !loading)
+          }
+          onSendNow={handleSendQueued}
         />
+        <div className="relative">
+          <AttachmentChips
+            attachments={chipAttachments}
+            onRemove={handleRemoveAttachment}
+            className="max-h-24 overflow-y-auto overscroll-contain rounded-t-xl border border-b-0 border-border/40 bg-background/40"
+          />
 
-        <MentionPopover
-          open={mentionOpen}
-          browseRelative={browseRelative}
-          filtered={mentionFiltered}
-          isLoading={mentionLoading}
-          selectedIndex={mentionSelectedIndex}
-          onSelect={handleMentionSelect}
-          onNavigate={handleMentionNavigate}
-          onNavigateUp={handleMentionNavigateUp}
-        />
-
-        {/* Container provides border/rounding; textarea + buttons are stacked inside */}
-        <div
-          className={cn(
-            'border border-input bg-background/60 backdrop-blur-sm transition-all duration-200 focus-within:ring-2 focus-within:ring-primary/30',
-            chipAttachments.length > 0
-              ? 'rounded-b-xl border-t-0'
-              : 'rounded-xl',
-          )}
-        >
-          <Textarea
-            ref={textareaRef}
-            value={value}
-            onChange={(e) => handleChange(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
-            placeholder={
-              inputDisabled
-                ? writerConflict
-                  ? t('Thread is active in another Codex client')
-                  : t('Archived thread is read-only')
-                : hasActiveTurn
-                  ? t('Queue a follow-up...')
-                  : threadId
-                    ? t('Type a message... (@ to mention files, paste images)')
-                    : t('Create a thread first')
-            }
-            disabled={!threadId || inputDisabled}
-            rows={1}
-            className="max-h-40 min-h-20 resize-none overflow-y-auto border-none bg-transparent pr-4 pt-2.5 shadow-none focus-visible:ring-0"
-          />
-          <input
-            ref={imageInputRef}
-            type="file"
-            accept="image/*"
-            multiple
-            hidden
-            aria-label={t('Upload images')}
-            disabled={!threadId || inputDisabled || uploading}
-            onChange={(event) => {
-              const files = Array.from(event.currentTarget.files ?? []);
-              event.currentTarget.value = '';
-              void uploadFiles(files);
-            }}
-          />
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            hidden
-            aria-label={t('Upload files')}
-            disabled={!threadId || inputDisabled || uploading}
-            onChange={(event) => {
-              const files = Array.from(event.currentTarget.files ?? []);
-              event.currentTarget.value = '';
-              void uploadFiles(files);
-            }}
-          />
-          <div className="flex flex-wrap items-center gap-1 px-2 pb-1">
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              className="h-10 gap-1.5 px-3 text-xs sm:h-8"
+          {/* Container provides border/rounding; textarea + buttons are stacked inside */}
+          <div
+            className={cn(
+              'border border-input bg-background/60 backdrop-blur-sm transition-all duration-200 focus-within:ring-2 focus-within:ring-primary/30',
+              chipAttachments.length > 0
+                ? 'rounded-b-xl border-t-0'
+                : 'rounded-xl',
+            )}
+          >
+            <Textarea
+              ref={textareaRef}
+              value={value}
+              onChange={(e) => handleChange(e.target.value)}
+              onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
+              placeholder={
+                inputDisabled
+                  ? writerConflict
+                    ? t('Thread is active in another Codex client')
+                    : t('Archived thread is read-only')
+                  : hasActiveTurn
+                    ? t('Queue a follow-up...')
+                    : threadId
+                      ? t('Type a message... (@ to mention files, paste images)')
+                      : t('Create a thread first')
+              }
+              disabled={!threadId || inputDisabled}
+              rows={1}
+              className="max-h-40 min-h-20 resize-none overflow-y-auto border-none bg-transparent pr-4 pt-2.5 shadow-none focus-visible:ring-0"
+            />
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              hidden
               aria-label={t('Upload images')}
               disabled={!threadId || inputDisabled || uploading}
-              onClick={() => imageInputRef.current?.click()}
-            >
-              <ImagePlus className="h-4 w-4" />
-              {t('Images')}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              className="h-10 gap-1.5 px-3 text-xs sm:h-8"
+              onChange={(event) => {
+                const files = Array.from(event.currentTarget.files ?? []);
+                event.currentTarget.value = '';
+                void uploadFiles(files);
+              }}
+            />
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              hidden
               aria-label={t('Upload files')}
               disabled={!threadId || inputDisabled || uploading}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <Paperclip className="h-4 w-4" />
-              {t('Files')}
-            </Button>
-            {uploading && (
-              <span
-                role="status"
-                className="flex items-center gap-1.5 text-xs text-muted-foreground"
-              >
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                {t('Uploading attachments…')}
-              </span>
-            )}
-          </div>
-          {uploadError && (
-            <p
-              role="alert"
-              className="whitespace-pre-wrap break-words px-3 pb-2 text-xs text-destructive"
-            >
-              {uploadError}
-            </p>
-          )}
-          <div className="flex flex-wrap items-center justify-between gap-y-2 px-2 pb-2">
-            <div className="flex flex-wrap items-center gap-1">
-              <ModelSelector />
-              <SecurityPolicyBadge />
-              <McpStatusBadge />
-              <SkillSelector
-                cwd={threadCwd}
-                disabled={!threadId || inputDisabled}
-                onSelect={handleSkillSelect}
-              />
+              onChange={(event) => {
+                const files = Array.from(event.currentTarget.files ?? []);
+                event.currentTarget.value = '';
+                void uploadFiles(files);
+              }}
+            />
+            <div className="flex flex-wrap items-center gap-1 px-2 pb-1">
               <Button
+                type="button"
                 size="sm"
-                variant={panelOpen ? 'secondary' : 'ghost'}
-                className="h-7 gap-1.5 rounded-lg px-2.5 text-xs"
-                onClick={onTogglePanel}
-                disabled={!threadId || inputDisabled}
-                title={t('Terminal')}
+                variant="ghost"
+                className="h-10 gap-1.5 px-3 text-xs sm:h-8"
+                aria-label={t('Upload images')}
+                disabled={!threadId || inputDisabled || uploading}
+                onClick={() => imageInputRef.current?.click()}
               >
-                <TerminalSquare className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">{t('Terminal')}</span>
+                <ImagePlus className="h-4 w-4" />
+                {t('Images')}
               </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-10 gap-1.5 px-3 text-xs sm:h-8"
+                aria-label={t('Upload files')}
+                disabled={!threadId || inputDisabled || uploading}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Paperclip className="h-4 w-4" />
+                {t('Files')}
+              </Button>
+              {uploading && (
+                <span
+                  role="status"
+                  className="flex items-center gap-1.5 text-xs text-muted-foreground"
+                >
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  {t('Uploading attachments…')}
+                </span>
+              )}
             </div>
+            {uploadError && (
+              <p
+                role="alert"
+                className="whitespace-pre-wrap break-words px-3 pb-2 text-xs text-destructive"
+              >
+                {uploadError}
+              </p>
+            )}
+            <div className="flex flex-wrap items-center justify-between gap-y-2 px-2 pb-2">
+              <div className="flex flex-wrap items-center gap-1">
+                <ModelSelector />
+                <SecurityPolicyBadge />
+                <McpStatusBadge />
+                <SkillSelector
+                  cwd={threadCwd}
+                  disabled={!threadId || inputDisabled}
+                  onSelect={handleSkillSelect}
+                />
+                <Button
+                  size="sm"
+                  variant={panelOpen ? 'secondary' : 'ghost'}
+                  className="h-7 gap-1.5 rounded-lg px-2.5 text-xs"
+                  onClick={onTogglePanel}
+                  disabled={!threadId || inputDisabled}
+                  title={t('Terminal')}
+                >
+                  <TerminalSquare className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">{t('Terminal')}</span>
+                </Button>
+              </div>
 
-            <div className="flex items-center gap-2">
-              <TokenUsageRing />
-              {hasActiveTurn ? (
-                <>
-                  <Popover
-                    open={followUpMenuOpen}
-                    onOpenChange={setFollowUpMenuOpen}
-                  >
-                    <PopoverTrigger asChild>
-                      <Button
-                        size="sm"
-                        className="h-7 w-7 rounded-lg px-0 text-xs transition-transform duration-200 hover:scale-105 active:scale-95 sm:w-auto sm:px-2.5"
-                        disabled={!hasContent || steer.isPending || uploading}
-                        title={t('Follow up')}
-                      >
-                        <MessageSquarePlus className="h-3.5 w-3.5" />
-                        <span className="hidden sm:inline">
-                          {t('Follow up')}
-                        </span>
-                        <ChevronUp className="hidden h-3 w-3 sm:block" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent
-                      align="end"
-                      side="top"
-                      sideOffset={8}
-                      className="w-64 rounded-lg p-1.5"
+              <div className="flex items-center gap-2">
+                <TokenUsageRing />
+                {hasActiveTurn ? (
+                  <>
+                    <Popover
+                      open={followUpMenuOpen}
+                      onOpenChange={setFollowUpMenuOpen}
                     >
-                      <p className="px-2 py-1 text-xs font-medium text-muted-foreground">
-                        {t('Choose follow-up action')}
-                      </p>
-                      <button
-                        type="button"
-                        className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left outline-none transition-colors hover:bg-accent focus-visible:bg-accent disabled:pointer-events-none disabled:opacity-50"
-                        disabled={!canSteer}
-                        onClick={() => {
-                          setFollowUpMenuOpen(false);
-                          handleSteer();
-                        }}
+                      <PopoverTrigger asChild>
+                        <Button
+                          size="sm"
+                          className="h-7 w-7 rounded-lg px-0 text-xs transition-transform duration-200 hover:scale-105 active:scale-95 sm:w-auto sm:px-2.5"
+                          disabled={!hasContent || steer.isPending || uploading}
+                          title={t('Follow up')}
+                        >
+                          <MessageSquarePlus className="h-3.5 w-3.5" />
+                          <span className="hidden sm:inline">
+                            {t('Follow up')}
+                          </span>
+                          <ChevronUp className="hidden h-3 w-3 sm:block" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent
+                        align="end"
+                        side="top"
+                        sideOffset={8}
+                        className="w-64 rounded-lg p-1.5"
                       >
-                        <CornerDownLeft className="mt-0.5 h-4 w-4 shrink-0" />
-                        <span className="min-w-0">
-                          <span className="block text-sm font-medium">
-                            {t('Steer current turn')}
+                        <p className="px-2 py-1 text-xs font-medium text-muted-foreground">
+                          {t('Choose follow-up action')}
+                        </p>
+                        <button
+                          type="button"
+                          className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left outline-none transition-colors hover:bg-accent focus-visible:bg-accent disabled:pointer-events-none disabled:opacity-50"
+                          disabled={!canSteer}
+                          onClick={() => {
+                            setFollowUpMenuOpen(false);
+                            handleSteer();
+                          }}
+                        >
+                          <CornerDownLeft className="mt-0.5 h-4 w-4 shrink-0" />
+                          <span className="min-w-0">
+                            <span className="block text-sm font-medium">
+                              {t('Steer current turn')}
+                            </span>
+                            <span className="block text-xs text-muted-foreground">
+                              {t('Changes the active response immediately')}
+                            </span>
                           </span>
-                          <span className="block text-xs text-muted-foreground">
-                            {t('Changes the active response immediately')}
+                        </button>
+                        <button
+                          type="button"
+                          className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left outline-none transition-colors hover:bg-accent focus-visible:bg-accent"
+                          onClick={() => {
+                            setFollowUpMenuOpen(false);
+                            handleQueue();
+                          }}
+                        >
+                          <ListPlus className="mt-0.5 h-4 w-4 shrink-0" />
+                          <span className="min-w-0">
+                            <span className="block text-sm font-medium">
+                              {t('Queue for next turn')}
+                            </span>
+                            <span className="block text-xs text-muted-foreground">
+                              {t('Starts automatically after the current turn')}
+                            </span>
                           </span>
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left outline-none transition-colors hover:bg-accent focus-visible:bg-accent"
-                        onClick={() => {
-                          setFollowUpMenuOpen(false);
-                          handleQueue();
-                        }}
-                      >
-                        <ListPlus className="mt-0.5 h-4 w-4 shrink-0" />
-                        <span className="min-w-0">
-                          <span className="block text-sm font-medium">
-                            {t('Queue for next turn')}
-                          </span>
-                          <span className="block text-xs text-muted-foreground">
-                            {t('Starts automatically after the current turn')}
-                          </span>
-                        </span>
-                      </button>
-                    </PopoverContent>
-                  </Popover>
+                        </button>
+                      </PopoverContent>
+                    </Popover>
+                    <Button
+                      size="icon"
+                      variant="destructive"
+                      className="h-7 w-7 rounded-lg transition-transform duration-200 hover:scale-105 active:scale-95"
+                      disabled={interruptTurn.isPending}
+                      onClick={handleStop}
+                      title={t('Stop current turn')}
+                    >
+                      <Square className="h-3.5 w-3.5" />
+                    </Button>
+                  </>
+                ) : (
                   <Button
                     size="icon"
-                    variant="destructive"
                     className="h-7 w-7 rounded-lg transition-transform duration-200 hover:scale-105 active:scale-95"
-                    disabled={interruptTurn.isPending}
-                    onClick={handleStop}
-                    title={t('Stop current turn')}
+                    disabled={
+                      !threadId ||
+                      !hasContent ||
+                      loading ||
+                      inputDisabled ||
+                      uploading
+                    }
+                    aria-label={t('Send')}
+                    onClick={handleSend}
                   >
-                    <Square className="h-3.5 w-3.5" />
+                    <Send className="h-3.5 w-3.5" />
                   </Button>
-                </>
-              ) : (
-                <Button
-                  size="icon"
-                  className="h-7 w-7 rounded-lg transition-transform duration-200 hover:scale-105 active:scale-95"
-                  disabled={
-                    !threadId ||
-                    !hasContent ||
-                    loading ||
-                    inputDisabled ||
-                    uploading
-                  }
-                  aria-label={t('Send')}
-                  onClick={handleSend}
-                >
-                  <Send className="h-3.5 w-3.5" />
-                </Button>
-              )}
+                )}
+              </div>
             </div>
           </div>
         </div>
-      </div>
-    </footer>
+      </footer>
+    </div>
   );
 });

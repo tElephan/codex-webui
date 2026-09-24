@@ -15,6 +15,7 @@ export interface MentionResult {
 }
 
 interface Props {
+  className?: string;
   open: boolean;
   /** Breadcrumb path segments (relative, e.g. "src/components"). */
   browseRelative: string;
@@ -31,7 +32,7 @@ interface Props {
   onNavigateUp: (relativePath: string) => void;
 }
 
-export function MentionPopover({ open, browseRelative, filtered, isLoading, selectedIndex, onSelect, onNavigate, onNavigateUp }: Props) {
+export function MentionPopover({ open, browseRelative, filtered, isLoading, selectedIndex, onSelect, onNavigate, onNavigateUp, className }: Props) {
   const { t } = useTranslation();
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -47,9 +48,9 @@ export function MentionPopover({ open, browseRelative, filtered, isLoading, sele
   const pathSegments = browseRelative ? browseRelative.split('/') : [];
 
   return (
-    <div className="absolute bottom-full z-50 mb-1 w-[calc(100vw-2rem)] max-w-72 rounded-lg border border-border bg-popover shadow-lg sm:w-72">
+    <div className={cn('absolute bottom-full z-50 mb-1 flex max-h-[35dvh] w-[calc(100vw-2rem)] max-w-72 flex-col overflow-hidden rounded-lg border border-border bg-popover shadow-lg sm:w-72', className)}>
       {/* Clickable breadcrumb for navigation */}
-      <div className="flex items-center gap-0.5 border-b border-border/60 px-3 py-1.5 text-[11px] text-muted-foreground">
+      <div className="flex shrink-0 items-center gap-0.5 border-b border-border/60 px-3 py-1.5 text-[11px] text-muted-foreground">
         <button
           type="button"
           onClick={() => onNavigateUp('')}
@@ -84,7 +85,7 @@ export function MentionPopover({ open, browseRelative, filtered, isLoading, sele
           {t('No matching files')}
         </div>
       ) : (
-        <div ref={listRef} className="max-h-52 overflow-y-auto py-1">
+        <div ref={listRef} className="max-h-52 min-h-0 overflow-y-auto overscroll-contain py-1">
           {filtered.map((entry, i) => (
             <div
               key={entry.path}

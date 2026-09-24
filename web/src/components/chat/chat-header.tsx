@@ -138,7 +138,7 @@ export function ChatHeader({ onToggleDiagnostics }: Props) {
 
   return (
     <>
-      <header className="glass-4 sticky top-0 z-10 flex items-center gap-2 px-3 py-2.5 sm:gap-3 sm:px-4 sm:py-3 lg:px-6">
+      <header className="glass-4 relative z-10 flex shrink-0 items-center gap-2 px-3 py-2.5 sm:gap-3 sm:px-4 sm:py-3 lg:px-6">
         {/* Hamburger (mobile/tablet) or expand toggle (desktop collapsed) */}
         {!isDesktop ? (
           <Button
