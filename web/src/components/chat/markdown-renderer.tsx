@@ -1,17 +1,20 @@
 /**
  * Markdown renderer for agent messages.
- * Uses react-markdown + remark-gfm. Code blocks get Shiki syntax highlighting
+ * Uses react-markdown + GFM and KaTeX math. Code blocks get Shiki syntax highlighting
  * (lazy-loaded on first completed code block, plain <code> fallback while loading).
  */
 import { memo, useEffect, useId, useState, useCallback, type ComponentProps } from 'react';
 import Markdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import { Copy, Check, FileText, Loader2 } from 'lucide-react';
 import { showSnackbar } from '@/stores/snackbar-store';
 import { useTimelineStore } from '@/stores/timeline-store';
 import { useTranslation } from 'react-i18next';
 import { copyText } from '@/lib/clipboard';
 import { highlightCode } from '@/lib/code-highlight';
+import { remarkLatexMath } from '@/lib/remark-latex-math';
 import { openFileInPanel, parseLocalFileLink } from '@/lib/local-file-link';
 import { cn } from '@/lib/utils';
 import { useThemeStore } from '@/stores/theme-store';
@@ -298,9 +301,10 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
   const linkBase = localLinkBase ?? threadCwd;
 
   return (
-    <div className={cn('text-sm leading-relaxed', 'wrap-break-word')}>
+    <div className={cn('markdown-content min-w-0 text-sm leading-relaxed', 'wrap-break-word')}>
       <Markdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, remarkMath, remarkLatexMath]}
+        rehypePlugins={[[rehypeKatex, { strict: 'ignore', trust: false }]]}
         components={components(completed, linkBase, allowBareRelativeLinks)}
         urlTransform={agentUrlTransform}
       >

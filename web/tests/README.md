@@ -56,6 +56,20 @@ read-only mode and switching among common formats. The Markdown checks cover
 language aliases, lazy grammar loading, themes, streaming and unknown-language
 fallbacks. Repeat the workspace and Markdown checks with a mobile viewport.
 
+Chat formula rendering regressions:
+
+```sh
+node --test web/tests/markdown-math.test.mjs
+agent-browser --session chat-math set viewport 390 844
+agent-browser --session chat-math open http://127.0.0.1:5179/tests/fixtures/markdown-math.html
+agent-browser --session chat-math eval --stdin < web/tests/markdown-math.browser.js
+agent-browser --session chat-math close
+```
+
+Repeat on desktop. These checks cover dollar and backslash delimiters, matrices,
+math fonts, themes, long equations, partial streamed input, invalid formulas and
+literal code examples. The parser checks also cover tables, lists and blockquotes.
+
 Use `?file=example.html` or `?file=example.HTM` for HTML render/source checks.
 Verify that the styled page and its button work inside the sandbox, source edits
 appear when returning to preview without saving, and switching back preserves
