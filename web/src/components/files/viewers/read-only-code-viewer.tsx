@@ -1,5 +1,7 @@
 /** Read-only Monaco viewer for archive entry text/code previews. */
 import Editor from '@monaco-editor/react';
+import { getCodeLanguage } from '@/lib/code-language';
+import { registerCodeLanguages } from '@/lib/monaco-languages';
 import { useQuery } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -26,9 +28,10 @@ export function ReadOnlyCodeViewer({ source }: Props) {
 
   return (
     <Editor
+      beforeMount={registerCodeLanguages}
       path={label}
       value={data ?? ''}
-      language={guessLanguage(label)}
+      language={getCodeLanguage(label) ?? 'plaintext'}
       theme={dark ? 'vs-dark' : 'vs'}
       height="100%"
       options={{
@@ -51,34 +54,4 @@ function CenteredMessage({ icon, message }: { icon?: React.ReactNode; message: s
       {message}
     </div>
   );
-}
-
-/** Maps file extension to Monaco language identifier. */
-function guessLanguage(fileName: string): string {
-  const ext = fileName.split('.').pop()?.toLowerCase() ?? '';
-  const map: Record<string, string> = {
-    ts: 'typescript',
-    tsx: 'typescript',
-    js: 'javascript',
-    jsx: 'javascript',
-    json: 'json',
-    md: 'markdown',
-    css: 'css',
-    scss: 'scss',
-    html: 'html',
-    xml: 'xml',
-    yaml: 'yaml',
-    yml: 'yaml',
-    py: 'python',
-    rs: 'rust',
-    go: 'go',
-    sql: 'sql',
-    sh: 'shell',
-    bash: 'shell',
-    zsh: 'shell',
-    dockerfile: 'dockerfile',
-    toml: 'ini',
-    env: 'ini',
-  };
-  return map[ext] ?? 'plaintext';
 }

@@ -11,36 +11,13 @@ import { showSnackbar } from '@/stores/snackbar-store';
 import { useTimelineStore } from '@/stores/timeline-store';
 import { useTranslation } from 'react-i18next';
 import { copyText } from '@/lib/clipboard';
+import { highlightCode } from '@/lib/code-highlight';
 import { openFileInPanel, parseLocalFileLink } from '@/lib/local-file-link';
 import { cn } from '@/lib/utils';
 import { useThemeStore } from '@/stores/theme-store';
 
-type HighlighterType = Awaited<ReturnType<typeof import('shiki')['createHighlighter']>>;
-
-let highlighterPromise: Promise<HighlighterType> | null = null;
-let highlighterInstance: HighlighterType | null = null;
 let mermaidPromise: Promise<typeof import('mermaid')['default']> | null = null;
 let mermaidRenderQueue = Promise.resolve();
-
-/** Lazily creates and caches a Shiki highlighter. */
-function getHighlighter(): Promise<HighlighterType> {
-  if (highlighterInstance) return Promise.resolve(highlighterInstance);
-  if (!highlighterPromise) {
-    highlighterPromise = import('shiki').then(async ({ createHighlighter }) => {
-      const hl = await createHighlighter({
-        themes: ['github-dark', 'github-light'],
-        langs: [
-          'javascript', 'typescript', 'jsx', 'tsx', 'json', 'html', 'css',
-          'python', 'rust', 'go', 'bash', 'shell', 'sql', 'yaml', 'toml',
-          'markdown', 'diff', 'dockerfile',
-        ],
-      });
-      highlighterInstance = hl;
-      return hl;
-    });
-  }
-  return highlighterPromise;
-}
 
 function renderMermaidDiagram(
   id: string,
@@ -93,32 +70,24 @@ function CodeBlock({
 }) {
   const { t } = useTranslation();
   const dark = useThemeStore((state) => state.dark);
-  const [html, setHtml] = useState<string | null>(null);
+  const [highlight, setHighlight] = useState<{ key: string; html: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const lang = className?.replace('language-', '') ?? '';
+  const renderKey = completed && lang ? JSON.stringify([children, lang, dark]) : null;
+  const html = highlight?.key === renderKey ? highlight.html : null;
 
   useEffect(() => {
-    if (!completed || !lang) return;
+    if (!renderKey) return;
     let cancelled = false;
 
-    void getHighlighter().then((hl) => {
-      if (cancelled) return;
-      try {
-        const loadedLangs = hl.getLoadedLanguages();
-        if (!loadedLangs.includes(lang as never)) return;
-        const result = hl.codeToHtml(children, {
-          lang,
-          themes: { dark: 'github-dark', light: 'github-light' },
-          defaultColor: dark ? 'dark' : 'light',
-        });
-        setHtml(result);
-      } catch {
-        // Language not supported — stay with plain rendering
-      }
+    void highlightCode(children, lang, dark).then((html) => {
+      if (!cancelled && html) setHighlight({ key: renderKey, html });
+    }).catch(() => {
+      // Unknown grammars or a failed lazy load retain readable source text.
     });
 
     return () => { cancelled = true; };
-  }, [children, lang, completed, dark]);
+  }, [children, lang, dark, renderKey]);
 
   const handleCopy = useCallback(async () => {
     try {

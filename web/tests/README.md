@@ -38,6 +38,24 @@ Use `window.codePreviewTest.setDark(true/false)` to check live theme changes and
 `window.codePreviewTest.writes` to inspect saves. Check editor height after resizing
 the viewport or panel and verify that switching themes preserves unsaved edits.
 
+Source format and fenced highlighting regressions:
+
+```sh
+node --test web/tests/code-formats.test.mjs
+agent-browser --session code-formats open 'http://127.0.0.1:5179/tests/fixtures/code-preview.html?file=example.tex'
+agent-browser --session code-formats eval --stdin < web/tests/code-preview.browser.js
+agent-browser --session code-formats open 'http://127.0.0.1:5179/tests/fixtures/code-preview.html?file=example.zip&entry=example.tex'
+agent-browser --session code-formats eval --stdin < web/tests/code-preview.browser.js
+agent-browser --session code-formats open http://127.0.0.1:5179/tests/fixtures/code-formats.html
+agent-browser --session code-formats eval --stdin < web/tests/code-formats.browser.js
+agent-browser --session code-formats close
+```
+
+The preview checks cover TeX tokenization, editing/saving, theme changes, archive
+read-only mode and switching among common formats. The Markdown checks cover
+language aliases, lazy grammar loading, themes, streaming and unknown-language
+fallbacks. Repeat the workspace and Markdown checks with a mobile viewport.
+
 Use `?file=example.html` or `?file=example.HTM` for HTML render/source checks.
 Verify that the styled page and its button work inside the sandbox, source edits
 appear when returning to preview without saving, and switching back preserves

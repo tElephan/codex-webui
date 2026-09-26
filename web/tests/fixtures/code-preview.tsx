@@ -17,10 +17,25 @@ const code = Array.from(
   { length: 80 },
   (_, index) => `export const value${index + 1}: number = ${index + 1};`,
 ).join('\n');
+const tex = String.raw`% TeX source preview
+\documentclass{article}
+\begin{document}
+\section{A sample equation}
+\[ E = mc^2 \]
+Escaped percent: 50\% % a comment
+\end{document}`;
 const contents = new Map([
   ['/fixture/example.ts', code],
+  ['/fixture/example.tex', tex],
+  ['/fixture/example.cpp', '#include <iostream>\nint main() { std::cout << "Hello"; }'],
+  ['/fixture/example.py', 'def hello(name: str):\n    return f"Hello {name}"'],
+  ['/fixture/example.java', 'public class Example { public static void main(String[] args) {} }'],
+  ['/fixture/example.vue', '<template><p>Hello</p></template>'],
+  ['/fixture/example.proto', 'syntax = "proto3";\nmessage Example { string name = 1; }'],
+  ['/fixture/.env.local', 'PORT=4545\nMODE=development'],
   ['/fixture/README.md', `# Preview\n\nExample code:\n\n\`\`\`typescript\n${code}\n\`\`\`\n`],
 ]);
+const archiveEntry = params.get('entry') ?? 'entry.ts';
 const html = `<!doctype html><html><head><style>
 body { margin: 24px; font-family: sans-serif; } h1 { color: rgb(0, 128, 128); }
 </style></head><body><h1>HTML preview fixture</h1>
@@ -63,13 +78,13 @@ client.setConfig({
         return Response.json({ mtime: 2 });
       }
       case '/api/files/tree':
-        return Response.json(['example.ts', 'README.md', 'example.html', 'example.HTM', 'example.zip'].map((name) => ({
+        return Response.json([...contents.keys()].map((path) => path.split('/').pop()!).concat('example.zip').map((name) => ({
           path: `/fixture/${name}`, name, type: 'file', size: code.length,
         })));
       case '/api/files/roots':
         return Response.json({ roots: ['/fixture'] });
       case '/api/files/archive/list':
-        return Response.json({ path, entries: [{ path: 'entry.ts', name: 'entry.ts', type: 'file', size: code.length }] });
+        return Response.json({ path, entries: [{ path: archiveEntry, name: archiveEntry, type: 'file', size: code.length }] });
       case '/api/settings':
         return Response.json({ settings: [] });
       default:
@@ -82,7 +97,7 @@ const originalFetch = window.fetch.bind(window);
 window.fetch = (input, init) => {
   const url = new URL(input instanceof Request ? input.url : String(input), location.href);
   if (url.pathname === '/api/files/archive/entry') {
-    return Promise.resolve(new Response(code));
+    return Promise.resolve(new Response(contents.get(`/fixture/${archiveEntry}`) ?? code));
   }
   return originalFetch(input, init);
 };
@@ -92,6 +107,11 @@ Object.assign(window, {
     writes,
     setDark: (dark: boolean) => useThemeStore.getState().setDark(dark),
     getEdit: () => useFilesStore.getState().fileEdits[filePath],
+    openFile: (name: string) => {
+      const path = `/fixture/${name}`;
+      if (params.has('window')) useFilesStore.getState().selectFileForWindow(path);
+      else useFilesStore.getState().selectFile(path);
+    },
   },
 });
 

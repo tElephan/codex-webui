@@ -4,6 +4,8 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import Editor from '@monaco-editor/react';
+import { getCodeLanguage } from '@/lib/code-language';
+import { registerCodeLanguages } from '@/lib/monaco-languages';
 import {
   Code2,
   Eye,
@@ -93,7 +95,7 @@ export function CodeViewer({ filePath }: Props) {
   }
 
   const fileName = filePath.split('/').pop() ?? filePath;
-  const language = guessLanguage(fileName);
+  const language = getCodeLanguage(fileName) ?? 'plaintext';
   const content = fileEdit?.content ?? persistedContent;
   const hasUnsavedChanges = Boolean(fileEdit);
   const slash = filePath.lastIndexOf('/');
@@ -169,6 +171,7 @@ export function CodeViewer({ filePath }: Props) {
           </div>
         ) : (
           <Editor
+            beforeMount={registerCodeLanguages}
             path={filePath}
             value={content}
             language={language}
@@ -195,37 +198,4 @@ export function CodeViewer({ filePath }: Props) {
 
 function isMarkdownFile(filePath: string): boolean {
   return /\.(?:md|markdown|mdx)$/i.test(filePath);
-}
-
-/** Maps file extension to Monaco language identifier. */
-function guessLanguage(fileName: string): string {
-  const ext = fileName.split('.').pop()?.toLowerCase() ?? '';
-  const map: Record<string, string> = {
-    ts: 'typescript',
-    tsx: 'typescript',
-    js: 'javascript',
-    jsx: 'javascript',
-    json: 'json',
-    md: 'markdown',
-    markdown: 'markdown',
-    mdx: 'markdown',
-    css: 'css',
-    scss: 'scss',
-    html: 'html',
-    htm: 'html',
-    xml: 'xml',
-    yaml: 'yaml',
-    yml: 'yaml',
-    py: 'python',
-    rs: 'rust',
-    go: 'go',
-    sql: 'sql',
-    sh: 'shell',
-    bash: 'shell',
-    zsh: 'shell',
-    dockerfile: 'dockerfile',
-    toml: 'ini',
-    env: 'ini',
-  };
-  return map[ext] ?? 'plaintext';
 }

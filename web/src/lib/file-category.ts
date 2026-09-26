@@ -1,4 +1,5 @@
 /** File type classification utilities for viewer routing. */
+import { getCodeLanguage } from './code-language';
 
 export type FileCategory =
   | 'image'
@@ -23,24 +24,17 @@ const AUDIO_EXTENSIONS = new Set(['mp3', 'wav', 'ogg', 'oga', 'flac', 'm4a']);
 const FONT_EXTENSIONS = new Set(['ttf', 'otf', 'woff', 'woff2']);
 const ARCHIVE_EXTENSIONS = new Set(['zip', 'tar', 'tgz', 'tbz2', 'txz', 'rar', '7z']);
 const ARCHIVE_COMPOUND_EXTENSIONS = new Set(['tar.gz', 'tar.bz2', 'tar.xz']);
-const CODE_EXTENSIONS = new Set([
-  'txt', 'md', 'markdown', 'mdx', 'json', 'jsonc', 'yaml', 'yml', 'toml', 'ini', 'env',
-  'ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'css', 'scss', 'sass', 'less',
-  'html', 'htm', 'xml', 'svg', 'py', 'rs', 'go', 'java', 'kt', 'kts', 'c',
-  'h', 'cpp', 'hpp', 'cs', 'php', 'rb', 'swift', 'sql', 'sh', 'bash', 'zsh',
-  'fish', 'dockerfile', 'gitignore', 'gitattributes', 'csv', 'log',
-]);
 
 /** Returns the lowercase file extension without the dot. */
 export function getExtension(filePath: string): string {
-  const name = filePath.split('/').pop() ?? '';
+  const name = filePath.split(/[\\/]/).pop() ?? '';
   const dot = name.lastIndexOf('.');
   return dot >= 0 ? name.slice(dot + 1).toLowerCase() : '';
 }
 
 /** Returns a supported compound extension such as tar.gz when present. */
 export function getCompoundExtension(filePath: string): string {
-  const name = (filePath.split('/').pop() ?? '').toLowerCase();
+  const name = (filePath.split(/[\\/]/).pop() ?? '').toLowerCase();
   for (const ext of ARCHIVE_COMPOUND_EXTENSIONS) {
     if (name.endsWith(`.${ext}`)) return ext;
   }
@@ -60,7 +54,7 @@ export function getFileCategory(filePath: string): FileCategory {
   if (ext === 'docx') return 'docx';
   if (ext === 'xlsx') return 'xlsx';
   if (ext === 'pptx') return 'pptx';
-  if (!ext || CODE_EXTENSIONS.has(ext)) return 'code';
+  if (!ext || getCodeLanguage(filePath) !== undefined) return 'code';
   return 'binary';
 }
 
