@@ -24,6 +24,23 @@ const tex = String.raw`% TeX source preview
 \[ E = mc^2 \]
 Escaped percent: 50\% % a comment
 \end{document}`;
+const mathMarkdown = String.raw`# Markdown formulas
+
+Inline: $E=mc^2$ and \(\frac{a_1}{b_2}\).
+
+$$
+\int_0^1 x^2\,dx = \frac{1}{3}
+$$
+
+\[
+\begin{pmatrix}
+1 & 2 \\
+3 & 4
+\end{pmatrix}
+\]
+
+[Related file](./example.tex)
+`;
 const contents = new Map([
   ['/fixture/example.ts', code],
   ['/fixture/example.tex', tex],
@@ -34,6 +51,7 @@ const contents = new Map([
   ['/fixture/example.proto', 'syntax = "proto3";\nmessage Example { string name = 1; }'],
   ['/fixture/.env.local', 'PORT=4545\nMODE=development'],
   ['/fixture/README.md', `# Preview\n\nExample code:\n\n\`\`\`typescript\n${code}\n\`\`\`\n`],
+  ['/fixture/MATH.md', mathMarkdown],
 ]);
 const archiveEntry = params.get('entry') ?? 'entry.ts';
 const html = `<!doctype html><html><head><style>
@@ -107,6 +125,7 @@ Object.assign(window, {
     writes,
     setDark: (dark: boolean) => useThemeStore.getState().setDark(dark),
     getEdit: () => useFilesStore.getState().fileEdits[filePath],
+    mathMarkdown,
     openFile: (name: string) => {
       const path = `/fixture/${name}`;
       if (params.has('window')) useFilesStore.getState().selectFileForWindow(path);

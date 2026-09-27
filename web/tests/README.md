@@ -70,6 +70,18 @@ Repeat on desktop. These checks cover dollar and backslash delimiters, matrices,
 math fonts, themes, long equations, partial streamed input, invalid formulas and
 literal code examples. The parser checks also cover tables, lists and blockquotes.
 
+Markdown file formulas use the same renderer. Verify the actual file preview,
+source editing and saving (fixture writes stay local to the browser):
+
+```sh
+agent-browser --session markdown-file open 'http://127.0.0.1:5179/tests/fixtures/code-preview.html?file=MATH.md&window=1'
+agent-browser --session markdown-file eval --stdin < web/tests/markdown-preview.browser.js
+agent-browser --session markdown-file set viewport 390 844
+agent-browser --session markdown-file open 'http://127.0.0.1:5179/tests/fixtures/code-preview.html?file=MATH.md'
+agent-browser --session markdown-file eval --stdin < web/tests/markdown-preview.browser.js
+agent-browser --session markdown-file close
+```
+
 Use `?file=example.html` or `?file=example.HTM` for HTML render/source checks.
 Verify that the styled page and its button work inside the sandbox, source edits
 appear when returning to preview without saving, and switching back preserves
