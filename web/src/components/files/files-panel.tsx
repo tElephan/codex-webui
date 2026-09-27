@@ -407,15 +407,17 @@ export function FilesPanel() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-8 gap-1.5"
-          onClick={() => setTreeSheetOpen(true)}
-        >
-          <FolderTree className="h-4 w-4" />
-          {t('Explorer')}
-        </Button>
+        {selectedFile && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 gap-1.5"
+            onClick={() => setTreeSheetOpen(true)}
+          >
+            <FolderTree className="h-4 w-4" />
+            {t('Explorer')}
+          </Button>
+        )}
         {rootDir && (
           <span className="truncate text-xs text-muted-foreground/60">
             {rootDir}
@@ -434,7 +436,7 @@ export function FilesPanel() {
       </div>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {fileTabsBar}
-        {viewerContent}
+        {selectedFile ? viewerContent : <FileTree onFileClick={handleFileClick} />}
       </div>
 
       <Sheet open={treeSheetOpen} onOpenChange={setTreeSheetOpen}>

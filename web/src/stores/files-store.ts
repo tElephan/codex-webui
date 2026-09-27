@@ -41,6 +41,7 @@ interface FilesState {
   restoreLastValidRootDir: (failedDir: string) => void;
   selectFile: (filePath: string | null) => void;
   selectFileForWindow: (filePath: string) => void;
+  openDirectoryForWindow: (directoryPath: string) => void;
   closeFileForWindow: (filePath: string) => void;
   setFileEdit: (
     filePath: string,
@@ -168,6 +169,21 @@ export const useFilesStore = create<FilesState>()(
             : [...state.windowFileTabs, filePath],
           ...(state.activeContext === 'window'
             ? { selectedFile: filePath, panelOpen: true, fileMtime: null }
+            : {}),
+        }));
+      },
+
+      openDirectoryForWindow: (directoryPath: string) => {
+        set((state) => ({
+          windowRootDir: directoryPath,
+          windowSelectedFile: null,
+          ...(state.activeContext === 'window'
+            ? {
+                rootDir: directoryPath,
+                selectedFile: null,
+                fileMtime: null,
+                expandedDirs: new Set<string>(),
+              }
             : {}),
         }));
       },

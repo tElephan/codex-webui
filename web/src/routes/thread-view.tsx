@@ -29,6 +29,7 @@ import {
   threadsReadThreadOptions,
 } from '@/generated/api/@tanstack/react-query.gen';
 import {
+  filesGetMetadata,
   tokenUsageReadThreadTokenUsage,
   turnDiffReadThreadTurnDiffs,
   turnErrorsReadThreadTurnErrors,
@@ -87,17 +88,43 @@ export function ThreadView() {
     seq: number;
   } | null>(null);
 
-  // Listen for codex-webui:open-file events from chat message badges
+  // Local links and badges may point to either a file or a directory.
   useEffect(() => {
+    let pendingRequest: AbortController | null = null;
     const handler = (e: Event) => {
       const path = (e as CustomEvent<{ path: string }>).detail?.path;
       if (!path) return;
-      setSessionPanelOpen(true);
-      setPendingOpenFile({ path, seq: ++openSeqRef.current });
+      pendingRequest?.abort();
+      const request = new AbortController();
+      pendingRequest = request;
+      void filesGetMetadata({
+        query: { path },
+        signal: request.signal,
+        throwOnError: true,
+        meta: { silent: true },
+      }).then(({ data }) => {
+        if (request.signal.aborted) return;
+        if (data.type === 'directory') {
+          useFilesStore.getState().openDirectoryForWindow(data.path);
+          void navigate({ to: '/files' });
+        } else if (data.type === 'file') {
+          setSessionPanelOpen(true);
+          setPendingOpenFile({ path: data.path, seq: ++openSeqRef.current });
+        } else {
+          showSnackbar(t('Only files and directories can be opened'), 'error');
+        }
+      }).catch((error: unknown) => {
+        if (!request.signal.aborted) {
+          showSnackbar(getApiErrorMessage(error, t('Cannot open path')), 'error');
+        }
+      });
     };
     window.addEventListener('codex-webui:open-file', handler);
-    return () => window.removeEventListener('codex-webui:open-file', handler);
-  }, []);
+    return () => {
+      pendingRequest?.abort();
+      window.removeEventListener('codex-webui:open-file', handler);
+    };
+  }, [navigate, t, threadId]);
 
   const handleFileOpened = useCallback(() => {
     setPendingOpenFile(null);

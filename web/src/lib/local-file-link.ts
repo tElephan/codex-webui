@@ -92,7 +92,7 @@ export function parseLocalFileLink(
   return { ...positioned, path: absolutePath };
 }
 
-/** Opens a server-side file in the thread's session panel. */
+/** Requests opening a local path; the thread view resolves files vs directories. */
 export function openFileInPanel(absolutePath: string): void {
   window.dispatchEvent(
     new CustomEvent('codex-webui:open-file', { detail: { path: absolutePath } }),

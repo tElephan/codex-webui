@@ -70,6 +70,20 @@ Repeat on desktop. These checks cover dollar and backslash delimiters, matrices,
 math fonts, themes, long equations, partial streamed input, invalid formulas and
 literal code examples. The parser checks also cover tables, lists and blockquotes.
 
+Chat local path links (run on desktop and after setting a mobile viewport):
+
+```sh
+agent-browser --session file-links open http://127.0.0.1:5179/tests/fixtures/file-links.html
+agent-browser --session file-links eval --stdin < web/tests/file-links.browser.js
+agent-browser --session file-links close
+```
+
+Uses actual message links and ThreadView to check that directory links open the
+Files browser, files still open the session preview, missing paths report errors,
+and old metadata responses cannot override another click or another session.
+Also covers directory names with dots, relative paths, Unicode, aliases, empty
+directories, child-file navigation and preservation of existing unsaved edits.
+
 Markdown file formulas use the same renderer. Verify the actual file preview,
 source editing and saving (fixture writes stay local to the browser):
 
