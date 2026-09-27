@@ -30,6 +30,8 @@
 
   click('Source');
   await until(() => model()?.getLanguageId() === 'markdown', 'source editor mounted');
+  // Monaco creates its model before React attaches the editor change listener.
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   check(model().getValue() === test.mathMarkdown, 'rendering preserves exact Markdown source');
   const edited = test.mathMarkdown + '\nAdditional inline formula: $x^2+y^2$.\n';
   model().setValue(edited);
