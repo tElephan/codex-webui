@@ -56,6 +56,9 @@ export class ThreadsGateway
     SuppressedServerRequest[]
   >();
 
+  /** One interruption per turn, even if a question is delivered more than once. */
+  private readonly questionPausedTurns = new Map<string, string>();
+
   constructor(
     private readonly codexManager: CodexProcessManager,
     private readonly authService: AuthService,
@@ -144,6 +147,15 @@ export class ThreadsGateway
     const params = notification.params as Record<string, unknown> | undefined;
     const threadId = params?.['threadId'] as string | undefined;
 
+    if (notification.method === 'turn/completed' && threadId) {
+      const turn = params?.['turn'] as { id?: string } | undefined;
+      if (this.questionPausedTurns.get(threadId) === turn?.id) {
+        this.questionPausedTurns.delete(threadId);
+      }
+    }
+
+    this.pauseForAsyncQuestions(notification, params, threadId);
+
     if (threadId) {
       this.server
         .to(`thread:${threadId}`)
@@ -152,6 +164,49 @@ export class ThreadsGateway
       // Broadcast non-thread-scoped notifications to all connected clients
       this.server.emit('codex.notification', notification);
     }
+  }
+
+  /** Async question items do not block Codex; stop their turn until the user answers. */
+  private pauseForAsyncQuestions(
+    notification: ServerNotification,
+    params: Record<string, unknown> | undefined,
+    threadId: string | undefined,
+  ): void {
+    if (notification.method !== 'item/completed' || !threadId) return;
+    const item = params?.['item'] as
+      | { type?: string; questions?: unknown }
+      | undefined;
+    const turnId = params?.['turnId'];
+    if (
+      item?.type !== 'agentMessage' ||
+      typeof turnId !== 'string' ||
+      !Array.isArray(item.questions) ||
+      !item.questions.some(
+        (question: unknown) =>
+          question !== null &&
+          typeof question === 'object' &&
+          'title' in question &&
+          typeof question.title === 'string' &&
+          question.title.trim(),
+      ) ||
+      this.deletionRegistry.isDeleting(threadId) ||
+      this.questionPausedTurns.get(threadId) === turnId
+    ) {
+      return;
+    }
+    const client = this.codexManager.getClient();
+    if (!client) return;
+    this.questionPausedTurns.set(threadId, turnId);
+    void client
+      .request('turn/interrupt', { threadId, turnId })
+      .catch((error: unknown) => {
+        if (this.questionPausedTurns.get(threadId) === turnId) {
+          this.questionPausedTurns.delete(threadId);
+        }
+        this.logger.warn(
+          `Unable to pause turn ${turnId} for user input: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
   }
 
   /**

@@ -2,6 +2,8 @@
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TurnBlock } from '../../src/components/chat/turn-block';
+import { ChatActivityStatus } from '../../src/components/chat/chat-activity-status';
+import { useConnectionStore } from '../../src/stores/connection-store';
 import { useTimelineStore } from '../../src/stores/timeline-store';
 import { client } from '../../src/generated/api/client.gen';
 import i18n from '../../src/i18n';
@@ -17,24 +19,26 @@ await i18n.changeLanguage('en');
 client.setConfig({
   baseUrl: location.origin,
   fetch: async (request) => {
-    state.requests.push({ url: request.url, body: await request.json() });
+    state.requests.push({
+      url: request.url,
+      body: request.body ? await request.json() : null,
+    });
     if (state.fail)
       return Response.json(
         { message: 'Test submission failed' },
         { status: 503 },
       );
     return Response.json(
-      request.url.endsWith('/steer')
-        ? { turnId }
-        : { turn: { id: 'next-turn' } },
+      request.url.endsWith('/interrupt') ? {} : { turn: { id: 'next-turn' } },
     );
   },
 });
 const store = useTimelineStore.getState();
+useConnectionStore.setState({ connected: true });
 store.hydrateTimelineForThread(threadId, [
   {
     id: turnId,
-    status: 'inProgress',
+    status: params.has('active') || legacy ? 'inProgress' : 'interrupted',
     items: legacy
       ? []
       : [
@@ -83,6 +87,7 @@ export function Fixture() {
   );
   return (
     <main className="mx-auto max-w-2xl p-4">
+      <ChatActivityStatus />
       {entry?.kind === 'turn' && <TurnBlock entry={entry} />}
     </main>
   );

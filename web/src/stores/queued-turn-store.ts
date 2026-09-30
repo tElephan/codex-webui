@@ -6,6 +6,8 @@ import type { StartTurnDto } from '@/generated/api/types.gen';
 import i18n from '@/i18n';
 import { getApiErrorMessage } from '@/lib/api-error';
 import { useTimelineStore } from '@/stores/timeline-store';
+import { useAsyncUserInputStore } from '@/stores/async-user-input-store';
+import { findPendingAsyncUserInput } from '@/lib/pending-async-user-input';
 
 type QueuedTurnInput = StartTurnDto['input'];
 
@@ -187,7 +189,15 @@ export async function dispatchNextQueuedTurn(
     !runtime ||
     runtime.threadMode !== 'live' ||
     runtime.activeTurnId ||
-    runtime.loading
+    runtime.loading ||
+    Object.values(runtime.userInputRequests).some(
+      (request) => request.status === 'pending',
+    ) ||
+    findPendingAsyncUserInput(
+      threadId,
+      runtime.timeline,
+      useAsyncUserInputStore.getState().answers,
+    )
   ) {
     return false;
   }

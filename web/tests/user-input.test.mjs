@@ -16,6 +16,7 @@ globalThis.window = { location: { origin: 'http://localhost' } };
 
 let vite, parsers, timeline, receipts, submit, client, notify;
 let requests, respond;
+let queue, pendingInput;
 const questions = [{ title: 'Choose a color', options: ['Blue', 'Green'] }];
 const answers = { 0: { answers: ['Green'] } };
 const wireItem = {
@@ -45,10 +46,17 @@ before(async () => {
     .client;
   notify = (await vite.ssrLoadModule('/src/hooks/notification-handlers.ts'))
     .handleNotification;
+  queue = await vite.ssrLoadModule('/src/stores/queued-turn-store.ts');
+  pendingInput = (
+    await vite.ssrLoadModule('/src/lib/pending-async-user-input.ts')
+  ).findPendingAsyncUserInput;
   client.setConfig({
     baseUrl: 'http://localhost',
     fetch: async (request) => {
-      requests.push({ url: request.url, body: await request.json() });
+      requests.push({
+        url: request.url,
+        body: request.body ? await request.json() : null,
+      });
       return respond(request);
     },
   });
@@ -62,6 +70,9 @@ beforeEach(() => {
   receipts.setState({ answers: {} });
   timeline.getState().hydrateTimelineForThread('thread-a', []);
   timeline.getState().hydrateTimelineForThread('thread-b', []);
+  timeline.getState().clearActiveTurnForThread('thread-a');
+  timeline.getState().clearActiveTurnForThread('thread-b');
+  queue.useQueuedTurnStore.setState({ queues: {} });
 });
 
 function history() {
@@ -124,9 +135,12 @@ test('started, delta and completed events keep structured questions', () => {
   assert.equal(currentItem().questions[0].question, 'Choose a color');
 });
 
-test('active-turn answers go to steer with the question and selected answer', async () => {
+test('answers during a pause finish interruption before starting a new turn', async () => {
   timeline.getState().setActiveTurnIdForThread('thread-a', 'turn-a');
-  respond = () => Response.json({ turnId: 'turn-a' });
+  respond = (request) =>
+    Response.json(
+      request.url.endsWith('/interrupt') ? {} : { turn: { id: 'new-turn' } },
+    );
   await submit(
     'thread-a',
     'question-item',
@@ -135,9 +149,14 @@ test('active-turn answers go to steer with the question and selected answer', as
   );
   assert.equal(
     requests[0].url,
-    'http://localhost/api/threads/thread-a/turns/turn-a/steer',
+    'http://localhost/api/threads/thread-a/turns/turn-a/interrupt',
   );
-  assert.equal(requests[0].body.input[0].text, 'Choose a color\nGreen');
+  assert.equal(requests[1].url, 'http://localhost/api/threads/thread-a/turns');
+  assert.equal(requests[1].body.input[0].text, 'Choose a color\nGreen');
+  assert.equal(
+    timeline.getState().getThreadRuntime('thread-a').activeTurnId,
+    'new-turn',
+  );
   assert.deepEqual(
     receipts.getState().answers['["thread-a","question-item"]'],
     answers,
@@ -166,7 +185,10 @@ test('a turn that finishes during submission falls back to a new turn', async ()
   timeline.getState().setActiveTurnIdForThread('thread-a', 'turn-a');
   respond = () =>
     requests.length === 1
-      ? Response.json({ message: 'no active turn to steer' }, { status: 400 })
+      ? Response.json(
+          { message: 'no active turn to interrupt' },
+          { status: 400 },
+        )
       : Response.json({ turn: { id: 'new-turn' } });
   await submit(
     'thread-a',
@@ -191,14 +213,79 @@ test('failed submissions remain unanswered and can be retried without fallback s
   );
   assert.deepEqual(receipts.getState().answers, {});
   assert.equal(requests.length, 1);
-  respond = () => Response.json({ turnId: 'turn-a' });
+  respond = (request) =>
+    Response.json(
+      request.url.endsWith('/interrupt') ? {} : { turn: { id: 'new-turn' } },
+    );
   await submit(
     'thread-a',
     'question-item',
     parsers.parseAsyncUserInputQuestions(questions),
     answers,
   );
-  assert.equal(requests.length, 2);
+  assert.equal(requests.length, 3);
+});
+
+test('unanswered questions survive a completed pause without submitting anything', () => {
+  timeline.getState().hydrateTimelineForThread('thread-a', history());
+  const runtime = timeline.getState().getThreadRuntime('thread-a');
+  assert.deepEqual(
+    pendingInput('thread-a', runtime.timeline, receipts.getState().answers),
+    {
+      turnId: 'turn-a',
+      itemId: 'question-item',
+    },
+  );
+  assert.equal(requests.length, 0);
+});
+
+test('queued messages cannot bypass unanswered questions, including after rehydration', async () => {
+  timeline.getState().hydrateTimelineForThread('thread-a', history());
+  queue.useQueuedTurnStore.getState().enqueue({
+    threadId: 'thread-a',
+    input: [{ type: 'text', text: 'Continue', text_elements: [] }],
+    displayText: 'Continue',
+  });
+  assert.equal(await queue.dispatchNextQueuedTurn('thread-a'), false);
+  timeline.getState().hydrateTimelineForThread('thread-a', history());
+  assert.equal(await queue.dispatchNextQueuedTurn('thread-a'), false);
+  assert.equal(requests.length, 0);
+  receipts.getState().record('["thread-a","question-item"]', answers);
+  assert.equal(await queue.dispatchNextQueuedTurn('thread-a'), true);
+  assert.equal(requests.length, 1);
+});
+
+test('older questions do not block a later user turn or another thread', () => {
+  timeline.getState().hydrateTimelineForThread('thread-a', [
+    ...history(),
+    {
+      id: 'later-turn',
+      status: 'completed',
+      items: [
+        {
+          type: 'userMessage',
+          id: 'later-message',
+          content: [{ type: 'text', text: 'Continue', text_elements: [] }],
+        },
+      ],
+    },
+  ]);
+  assert.equal(
+    pendingInput(
+      'thread-a',
+      timeline.getState().getThreadRuntime('thread-a').timeline,
+      {},
+    ),
+    undefined,
+  );
+  assert.equal(
+    pendingInput(
+      'thread-b',
+      timeline.getState().getThreadRuntime('thread-b').timeline,
+      {},
+    ),
+    undefined,
+  );
 });
 
 test('duplicate submits send one response, and accepted answers survive rehydration', async () => {

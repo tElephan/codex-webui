@@ -13,12 +13,21 @@ import { syncThread } from '@/lib/thread-sync';
 import { getSocket } from '@/socket';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { useAsyncUserInputStore } from '@/stores/async-user-input-store';
+import { findPendingAsyncUserInput } from '@/lib/pending-async-user-input';
 
 /** Stays above the composer even when the running turn has scrolled out of view. */
 export function ChatActivityStatus() {
   const { t } = useTranslation();
   const threadId = useTimelineStore((s) => s.threadId);
   const mode = useTimelineStore((s) => s.threadMode);
+  const timeline = useTimelineStore((s) => s.timeline);
+  const answers = useAsyncUserInputStore((s) => s.answers);
+  const pendingAsyncInput = findPendingAsyncUserInput(
+    threadId,
+    timeline,
+    answers,
+  );
   const connected = useConnectionStore((s) => s.connected);
   const sync = useThreadSyncStore((s) =>
     threadId ? s.threads[threadId]?.status : undefined,
@@ -28,7 +37,7 @@ export function ChatActivityStatus() {
       (request) => request.status === 'pending',
     ),
   );
-  const activity = useTimelineStore((s) => {
+  const runtimeActivity = useTimelineStore((s) => {
     if (
       Object.values(s.approvals).some((request) => request.status === 'pending')
     )
@@ -66,6 +75,10 @@ export function ChatActivityStatus() {
     }
     return 'idle';
   });
+  const activity =
+    pendingAsyncInput && runtimeActivity !== 'approval'
+      ? 'input'
+      : runtimeActivity;
 
   if (!threadId || mode !== 'live') return null;
   const disconnected = !connected;
@@ -121,7 +134,10 @@ export function ChatActivityStatus() {
         />
         <span>{message}</span>
       </div>
-      {waiting && pendingRequest && connected && !failed ? (
+      {waiting &&
+      (pendingRequest || pendingAsyncInput) &&
+      connected &&
+      !failed ? (
         <Button
           type="button"
           variant="ghost"
@@ -132,8 +148,10 @@ export function ChatActivityStatus() {
               new CustomEvent('codex-webui:show-request', {
                 detail: {
                   threadId,
-                  turnId: pendingRequest.turnId,
-                  requestId: String(pendingRequest.requestId),
+                  turnId: pendingRequest?.turnId ?? pendingAsyncInput?.turnId,
+                  requestId: pendingRequest
+                    ? String(pendingRequest.requestId)
+                    : pendingAsyncInput?.itemId,
                 },
               }),
             );
