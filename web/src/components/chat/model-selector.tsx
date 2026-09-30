@@ -3,6 +3,7 @@
  * Displays current model + effort as a compact badge, opens a popover to change.
  */
 import { Bot, ChevronDown } from 'lucide-react';
+import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
@@ -53,6 +54,7 @@ export function ModelSelector() {
   const { data: modelsData } = useQuery({
     ...modelsListModelsOptions(),
     staleTime: 60_000,
+    refetchOnWindowFocus: true,
   });
 
   const config = configData?.config as Record<string, unknown> | undefined;
@@ -65,6 +67,19 @@ export function ModelSelector() {
   const activeModel = models.find((m) => m.model === activeModelId);
   const defaultEffort = configEffort ?? activeModel?.defaultReasoningEffort ?? null;
   const activeEffort = effortOverride ?? defaultEffort;
+
+  useEffect(() => {
+    if (
+      modelsData &&
+      modelOverride &&
+      !modelsData.data.some(
+        (model) => !model.hidden && model.model === modelOverride,
+      )
+    ) {
+      setModelOverride(null);
+      setEffortOverride(null);
+    }
+  }, [modelOverride, modelsData, setEffortOverride, setModelOverride]);
 
   const displayModel = activeModel
     ? modelLabel(activeModel)

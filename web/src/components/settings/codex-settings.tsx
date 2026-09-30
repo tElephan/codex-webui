@@ -21,6 +21,7 @@ import {
   codexConfigUpdateConfigMutation,
   codexConfigUpdateRawConfigMutation,
   codexStatusGetStatusOptions,
+  modelsListModelsOptions,
 } from '@/generated/api/@tanstack/react-query.gen';
 import type { ConfigEditDto } from '@/generated/api/types.gen';
 import { showSnackbar } from '@/stores/snackbar-store';
@@ -239,6 +240,9 @@ export function CodexSettings() {
     });
     void queryClient.invalidateQueries({
       queryKey: codexStatusGetStatusOptions().queryKey,
+    });
+    void queryClient.invalidateQueries({
+      queryKey: modelsListModelsOptions().queryKey,
     });
   }, [queryClient]);
 
