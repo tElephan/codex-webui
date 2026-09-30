@@ -29,6 +29,7 @@ import { ThreadsModule } from './threads/threads.module';
 import { TokenUsageModule } from './token-usage/token-usage.module';
 import { TurnDiffModule } from './turn-diff/turn-diff.module';
 import { TurnErrorsModule } from './turn-errors/turn-errors.module';
+import { PUBLIC_STATIC_OPTIONS } from './public-assets';
 
 const isDev = process.env.NODE_ENV !== 'production';
 const logLevel = process.env.LOG_LEVEL ?? (isDev ? 'debug' : 'info');
@@ -105,17 +106,7 @@ const PINO_REDACT = {
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', 'public'),
       exclude: ['/api/(.*)'],
-      serveStaticOptions: {
-        fallthrough: true,
-        setHeaders: (response, filePath) => {
-          if (filePath.includes(join('public', 'assets'))) {
-            response.setHeader(
-              'Cache-Control',
-              'public, max-age=31536000, immutable',
-            );
-          }
-        },
-      },
+      serveStaticOptions: PUBLIC_STATIC_OPTIONS,
     }),
     AuthModule,
     ArchiveModule,

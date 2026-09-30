@@ -27,7 +27,8 @@ export default defineConfig({
   },
   build: {
     outDir: '../public',
-    emptyOutDir: true,
+    // Open tabs may still import chunks from the previous build.
+    emptyOutDir: false,
     rolldownOptions: {
       output: {
         codeSplitting: true,
