@@ -1,8 +1,5 @@
 /** Async question answers are ordinary user input, not pending JSON-RPC responses. */
-import {
-  threadsInterruptTurn,
-  threadsStartTurn,
-} from '@/generated/api/sdk.gen';
+import { threadsStartTurn, threadsSteerTurn } from '@/generated/api/sdk.gen';
 import { useTimelineStore } from '@/stores/timeline-store';
 import { useAsyncUserInputStore } from '@/stores/async-user-input-store';
 import type { UserInputAnswers, UserInputQuestion } from '@/types/approval';
@@ -34,16 +31,25 @@ export async function submitAsyncUserInput(
   const input = [{ type: 'text' as const, text, text_elements: [] }];
   submitting.add(key);
   try {
+    let steered = false;
     if (runtime.activeTurnId) {
       try {
-        // Finish the question's pause before sending its answer. Steering the
-        // interrupted turn can accept input that is then lost during cancellation.
-        await threadsInterruptTurn({
+        await threadsSteerTurn({
           path: { threadId, turnId: runtime.activeTurnId },
+          body: { input },
           throwOnError: true,
         });
+        steered = true;
+        useTimelineStore
+          .getState()
+          .addSystemMessageForThread(
+            threadId,
+            text,
+            'info',
+            runtime.activeTurnId,
+          );
       } catch (error) {
-        // The automatic pause may already have completed.
+        // The turn can finish while the user is choosing. Retry only a definite rejection.
         if (
           !/no active turn|not active|already (?:completed|finished)/i.test(
             getApiErrorMessage(error),
@@ -52,15 +58,15 @@ export async function submitAsyncUserInput(
           throw error;
       }
     }
-    const { data } = await threadsStartTurn({
-      path: { threadId },
-      body: { input },
-      throwOnError: true,
-    });
-    const store = useTimelineStore.getState();
-    store.addUserMessageForThread(threadId, text, undefined, data.turn.id);
-    store.setActiveTurnIdForThread(threadId, data.turn.id);
-    store.setLoadingForThread(threadId, true);
+    if (!steered) {
+      const { data } = await threadsStartTurn({
+        path: { threadId },
+        body: { input },
+        throwOnError: true,
+      });
+      const store = useTimelineStore.getState();
+      store.addUserMessageForThread(threadId, text, undefined, data.turn.id);
+    }
     useAsyncUserInputStore.getState().record(key, answers);
   } finally {
     submitting.delete(key);

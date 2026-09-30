@@ -16,17 +16,15 @@ export function AsyncUserInputCard({
   const key = JSON.stringify([threadId, itemId]);
   const answers = useAsyncUserInputStore((state) => state.answers[key]);
   return (
-    <div data-request-id={itemId}>
-      <UserInputForm
-        key={key}
-        questions={questions}
-        resolved={!!answers}
-        disabled={!threadId || threadMode !== 'live'}
-        submittedAnswers={answers}
-        onSubmit={(result) =>
-          submitAsyncUserInput(threadId!, itemId, questions, result)
-        }
-      />
-    </div>
+    <UserInputForm
+      key={key}
+      questions={questions}
+      resolved={!!answers}
+      disabled={!threadId || threadMode !== 'live'}
+      submittedAnswers={answers}
+      onSubmit={(result) =>
+        submitAsyncUserInput(threadId!, itemId, questions, result)
+      }
+    />
   );
 }

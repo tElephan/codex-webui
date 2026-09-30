@@ -18,7 +18,6 @@ describe('ThreadsGateway', () => {
     ),
     getClient: jest.fn(),
   };
-  const mockRpcRequest = jest.fn().mockResolvedValue({});
 
   const mockAuthService = {
     authenticateToken: jest.fn(),
@@ -75,87 +74,6 @@ describe('ThreadsGateway', () => {
     jest.clearAllMocks();
     mockServer.to.mockReturnThis();
     mockDeletionRegistry.isDeleting.mockReturnValue(false);
-    mockRpcRequest.mockReset().mockResolvedValue({});
-    mockManager.getClient.mockReturnValue({ request: mockRpcRequest });
-  });
-
-  const asyncQuestion = (threadId = 't1', turnId = 'turn1') => ({
-    method: 'item/completed',
-    params: {
-      threadId,
-      turnId,
-      item: {
-        type: 'agentMessage',
-        id: 'question1',
-        text: '',
-        questions: [{ title: 'Choose a color', options: ['Blue', 'Green'] }],
-      },
-    },
-  });
-
-  it('pauses async questions without subscribers and still delivers the question', () => {
-    const notification = asyncQuestion();
-    listeners['notification'](notification);
-    expect(mockRpcRequest).toHaveBeenCalledWith('turn/interrupt', {
-      threadId: 't1',
-      turnId: 'turn1',
-    });
-    expect(mockServer.emit).toHaveBeenCalledWith(
-      'codex.notification',
-      notification,
-    );
-  });
-
-  it('interrupts each question turn only once and keeps different threads isolated', () => {
-    listeners['notification'](asyncQuestion());
-    listeners['notification'](asyncQuestion());
-    listeners['notification'](asyncQuestion('t2', 'turn2'));
-    expect(mockRpcRequest).toHaveBeenCalledTimes(2);
-    listeners['notification']({
-      method: 'turn/completed',
-      params: { threadId: 't1', turn: { id: 'turn1', status: 'interrupted' } },
-    });
-    listeners['notification'](asyncQuestion('t1', 'next-turn'));
-    expect(mockRpcRequest).toHaveBeenLastCalledWith('turn/interrupt', {
-      threadId: 't1',
-      turnId: 'next-turn',
-    });
-  });
-
-  it('does not pause normal messages, malformed questions, or blocking server requests', () => {
-    for (const questions of [
-      undefined,
-      [],
-      [null],
-      [{ title: '' }],
-      [{ title: 1 }],
-    ]) {
-      const notification = asyncQuestion();
-      Object.assign(notification.params.item, { questions });
-      listeners['notification'](notification);
-    }
-    listeners['serverRequest']({
-      id: 9,
-      method: 'item/tool/requestUserInput',
-      params: asyncQuestion().params,
-    });
-    expect(mockRpcRequest).not.toHaveBeenCalled();
-    expect(mockPendingApprovals.recordServerRequest).toHaveBeenCalled();
-  });
-
-  it('leaves deleting threads to the deletion workflow', () => {
-    mockDeletionRegistry.isDeleting.mockReturnValue(true);
-    listeners['notification'](asyncQuestion());
-    expect(mockRpcRequest).not.toHaveBeenCalled();
-  });
-
-  it('handles failed pauses without losing the question or an unhandled rejection', async () => {
-    mockRpcRequest.mockRejectedValueOnce(new Error('app-server unavailable'));
-    listeners['notification'](asyncQuestion());
-    await Promise.resolve();
-    listeners['notification'](asyncQuestion());
-    expect(mockRpcRequest).toHaveBeenCalledTimes(2);
-    expect(mockServer.emit).toHaveBeenCalledTimes(2);
   });
 
   it('should join room on subscribe', () => {
