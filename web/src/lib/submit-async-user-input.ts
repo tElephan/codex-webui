@@ -4,6 +4,8 @@ import { useTimelineStore } from '@/stores/timeline-store';
 import { useAsyncUserInputStore } from '@/stores/async-user-input-store';
 import type { UserInputAnswers, UserInputQuestion } from '@/types/approval';
 import { getApiErrorMessage } from './api-error';
+import type { QueryClient } from '@tanstack/react-query';
+import { getTurnModelOptions } from './model-selection';
 
 const submitting = new Set<string>();
 
@@ -12,6 +14,7 @@ export async function submitAsyncUserInput(
   itemId: string,
   questions: UserInputQuestion[],
   answers: UserInputAnswers,
+  queryClient?: QueryClient,
 ): Promise<void> {
   const key = JSON.stringify([threadId, itemId]);
   if (submitting.has(key) || useAsyncUserInputStore.getState().answers[key])
@@ -29,6 +32,7 @@ export async function submitAsyncUserInput(
     .map((q) => `${q.question}\n${answers[q.id].answers.join('\n')}`)
     .join('\n\n');
   const input = [{ type: 'text' as const, text, text_elements: [] }];
+  const modelOptions = getTurnModelOptions(queryClient);
   submitting.add(key);
   try {
     let steered = false;
@@ -61,7 +65,7 @@ export async function submitAsyncUserInput(
     if (!steered) {
       const { data } = await threadsStartTurn({
         path: { threadId },
-        body: { input },
+        body: { input, ...modelOptions },
         throwOnError: true,
       });
       const store = useTimelineStore.getState();

@@ -42,7 +42,7 @@ import {
 import { cn } from '@/lib/utils';
 import { getApiErrorMessage } from '@/lib/api-error';
 import { useTimelineStore } from '@/stores/timeline-store';
-import { useModelStore } from '@/stores/model-store';
+import { getTurnModelOptions } from '@/lib/model-selection';
 import { useChatDraftStore } from '@/stores/chat-draft-store';
 import {
   dispatchNextQueuedTurn,
@@ -250,13 +250,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
       imageAttachments.length > 0 ? imageAttachments : undefined,
     );
     clearAfterSend();
-    const { modelOverride, effortOverride } = useModelStore.getState();
+    const modelOptions = getTurnModelOptions(queryClient);
     startTurn.mutate({
       path: { threadId },
       body: {
         input: input as never,
-        ...(modelOverride && { model: modelOverride }),
-        ...(effortOverride && { effort: effortOverride }),
+        ...modelOptions,
       },
     });
   }, [
@@ -268,6 +267,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
     addUserMessage,
     clearAfterSend,
     startTurn,
+    queryClient,
   ]);
 
   const handleSteer = useCallback(() => {
@@ -286,7 +286,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
       (item) => item.id,
     );
     const attachmentCount = input.filter((item) => item.type !== 'text').length;
-    const { modelOverride, effortOverride } = useModelStore.getState();
+    const modelOptions = getTurnModelOptions(queryClient);
 
     const clearIfUnchanged = () => {
       const currentIds = attachmentsRef.current.map((item) => item.id);
@@ -332,8 +332,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
               threadId: targetThreadId,
               input,
               displayText: submittedValue.trim(),
-              ...(modelOverride && { model: modelOverride }),
-              ...(effortOverride && { effort: effortOverride }),
+              ...modelOptions,
             });
             clearIfUnchanged();
             addSystemMessageForThread(
@@ -364,18 +363,18 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
     t,
     threadId,
     valueRef,
+    queryClient,
   ]);
 
   const handleQueue = useCallback(() => {
     const input = buildInput() as StartTurnDto['input'];
     if (input.length === 0 || !threadId || inputDisabled) return;
-    const { modelOverride, effortOverride } = useModelStore.getState();
+    const modelOptions = getTurnModelOptions(queryClient);
     enqueueTurn({
       threadId,
       input,
       displayText: valueRef.current.trim(),
-      ...(modelOverride && { model: modelOverride }),
-      ...(effortOverride && { effort: effortOverride }),
+      ...modelOptions,
     });
     clearAfterSend();
     // Covers the small race where the active turn completed just before enqueue.
@@ -387,6 +386,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
     inputDisabled,
     threadId,
     valueRef,
+    queryClient,
   ]);
 
   const handleSendQueued = useCallback(
@@ -626,7 +626,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
                   : hasActiveTurn
                     ? t('Queue a follow-up...')
                     : threadId
-                      ? t('Type a message... (@ to mention files, paste images)')
+                      ? t(
+                          'Type a message... (@ to mention files, paste images)',
+                        )
                       : t('Create a thread first')
               }
               disabled={!threadId || inputDisabled}
@@ -772,7 +774,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
                               {t('Steer current turn')}
                             </span>
                             <span className="block text-xs text-muted-foreground">
-                              {t('Changes the active response immediately')}
+                              {t(
+                                'Changes the active response using its current model',
+                              )}
                             </span>
                           </span>
                         </button>

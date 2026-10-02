@@ -1,4 +1,6 @@
 {
+  "Model changes apply to the next turn. The current response keeps its model.": "模型切换从下一轮生效，当前回复继续使用原模型。",
+  "Changes the active response using its current model": "立即调整当前回复，继续使用当前模型",
   "Loading...": "加载中...",
   "Navigation": "导航",
   "Open navigation": "打开导航",

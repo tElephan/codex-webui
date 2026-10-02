@@ -3,7 +3,6 @@
  * Displays current model + effort as a compact badge, opens a popover to change.
  */
 import { Bot, ChevronDown } from 'lucide-react';
-import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
@@ -18,9 +17,11 @@ import {
 } from '@/generated/api/@tanstack/react-query.gen';
 import type { ModelDto } from '@/generated/api';
 import { useModelStore } from '@/stores/model-store';
+import { useTimelineStore } from '@/stores/timeline-store';
+import { resolveModelSelection } from '@/lib/model-selection';
 import { cn } from '@/lib/utils';
 
-type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+type ReasoningEffort = ModelDto['defaultReasoningEffort'];
 
 /** Fallback effort options when a model doesn't declare its own. */
 const DEFAULT_EFFORTS: Array<{ reasoningEffort: ReasoningEffort }> = [
@@ -44,6 +45,7 @@ export function ModelSelector() {
   const effortOverride = useModelStore((s) => s.effortOverride);
   const setModelOverride = useModelStore((s) => s.setModelOverride);
   const setEffortOverride = useModelStore((s) => s.setEffortOverride);
+  const hasActiveTurn = useTimelineStore((s) => !!s.activeTurnId);
 
   // Effective Codex config is the source of truth for model defaults.
   const { data: configData } = useQuery({
@@ -58,50 +60,36 @@ export function ModelSelector() {
   });
 
   const config = configData?.config as Record<string, unknown> | undefined;
-  const configModel = typeof config?.model === 'string' ? config.model : null;
-  const configEffort = isReasoningEffort(config?.model_reasoning_effort)
-    ? config.model_reasoning_effort
-    : null;
   const models = modelsData?.data?.filter((m) => !m.hidden) ?? [];
-  const activeModelId = modelOverride ?? configModel ?? null;
-  const activeModel = models.find((m) => m.model === activeModelId);
-  const defaultEffort = configEffort ?? activeModel?.defaultReasoningEffort ?? null;
-  const activeEffort = effortOverride ?? defaultEffort;
-
-  useEffect(() => {
-    if (
-      modelsData &&
-      modelOverride &&
-      !modelsData.data.some(
-        (model) => !model.hidden && model.model === modelOverride,
-      )
-    ) {
-      setModelOverride(null);
-      setEffortOverride(null);
-    }
-  }, [modelOverride, modelsData, setEffortOverride, setModelOverride]);
+  const {
+    model: activeModelId,
+    activeModel,
+    effort: activeEffort,
+    defaultEffort,
+  } = resolveModelSelection(
+    { modelOverride, effortOverride },
+    config,
+    modelsData?.data,
+  );
 
   const displayModel = activeModel
     ? modelLabel(activeModel)
-    : activeModelId ?? t('Default');
+    : (activeModelId ?? t('Default'));
   const displayEffort = activeEffort ?? '';
 
   const handleModelSelect = (model: ModelDto) => {
-    if (model.model === configModel) {
-      setModelOverride(null);
-    } else {
-      setModelOverride(model.model);
-    }
-    // Reset effort to model default when switching models
-    setEffortOverride(null);
+    // Default choices must also be sent explicitly to replace the thread's old settings.
+    const next = resolveModelSelection(
+      { modelOverride: model.model, effortOverride: null },
+      config,
+      modelsData?.data,
+    );
+    setModelOverride(model.model);
+    setEffortOverride(next.effort);
   };
 
   const handleEffortSelect = (effort: ReasoningEffort) => {
-    if (effort === defaultEffort) {
-      setEffortOverride(null);
-    } else {
-      setEffortOverride(effort);
-    }
+    setEffortOverride(effort);
   };
 
   return (
@@ -112,9 +100,10 @@ export function ModelSelector() {
           size="sm"
           className="h-7 gap-1 rounded-lg px-2 text-xs"
           title={t('Model & reasoning effort')}
+          aria-label={t('Model & reasoning effort')}
         >
           <Bot className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline max-w-[120px] truncate">
+          <span className="max-w-24 truncate sm:max-w-[120px]">
             {displayModel}
           </span>
           {displayEffort && (
@@ -131,6 +120,13 @@ export function ModelSelector() {
         side="top"
         className="w-64 space-y-3 p-3 text-sm"
       >
+        {hasActiveTurn && (
+          <p className="text-xs text-muted-foreground">
+            {t(
+              'Model changes apply to the next turn. The current response keeps its model.',
+            )}
+          </p>
+        )}
         {/* Model list */}
         <div className="space-y-1">
           <div className="text-xs font-medium text-muted-foreground">
@@ -141,6 +137,7 @@ export function ModelSelector() {
               <button
                 key={model.id}
                 type="button"
+                aria-pressed={model.model === activeModelId}
                 onClick={() => handleModelSelect(model)}
                 className={cn(
                   'flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm transition-colors',
@@ -177,6 +174,7 @@ export function ModelSelector() {
             <button
               key={opt.reasoningEffort}
               type="button"
+              aria-pressed={opt.reasoningEffort === activeEffort}
               onClick={() => handleEffortSelect(opt.reasoningEffort)}
               className={cn(
                 'flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm transition-colors',
@@ -197,15 +195,4 @@ export function ModelSelector() {
       </PopoverContent>
     </Popover>
   );
-}
-
-function isReasoningEffort(value: unknown): value is ReasoningEffort {
-  return typeof value === 'string' && [
-    'none',
-    'minimal',
-    'low',
-    'medium',
-    'high',
-    'xhigh',
-  ].includes(value);
 }

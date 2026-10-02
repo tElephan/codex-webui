@@ -3,6 +3,7 @@ import { useAsyncUserInputStore } from '@/stores/async-user-input-store';
 import { submitAsyncUserInput } from '@/lib/submit-async-user-input';
 import type { UserInputQuestion } from '@/types/approval';
 import { UserInputForm } from './user-input-form';
+import { useQueryClient } from '@tanstack/react-query';
 
 export function AsyncUserInputCard({
   itemId,
@@ -11,6 +12,7 @@ export function AsyncUserInputCard({
   itemId: string;
   questions: UserInputQuestion[];
 }) {
+  const queryClient = useQueryClient();
   const threadId = useTimelineStore((state) => state.threadId);
   const threadMode = useTimelineStore((state) => state.threadMode);
   const key = JSON.stringify([threadId, itemId]);
@@ -23,7 +25,7 @@ export function AsyncUserInputCard({
       disabled={!threadId || threadMode !== 'live'}
       submittedAnswers={answers}
       onSubmit={(result) =>
-        submitAsyncUserInput(threadId!, itemId, questions, result)
+        submitAsyncUserInput(threadId!, itemId, questions, result, queryClient)
       }
     />
   );
