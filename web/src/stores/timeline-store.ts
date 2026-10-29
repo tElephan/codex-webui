@@ -619,6 +619,11 @@ interface TimelineState {
     thread: ThreadDto,
     expected: ThreadRuntimeState,
   ) => boolean;
+  /** Refresh an unopened thread without discarding its live events or hydrating history. */
+  reconcileThreadSummary: (
+    thread: ThreadDto,
+    expected: ThreadRuntimeState,
+  ) => boolean;
   hydrateTokenUsageForThread: (
     threadId: string,
     turns: Array<{ turnId: string; usage: ThreadTokenUsage }>,
@@ -1110,6 +1115,30 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         activeTurnId: null,
         hydrated: true,
       }));
+    },
+
+    reconcileThreadSummary: (thread, expected) => {
+      const runtime = get().getThreadRuntime(thread.id);
+      if (
+        !runtime ||
+        runtime.hydrated ||
+        runtime.timeline !== expected.timeline ||
+        runtime.loading !== expected.loading ||
+        runtime.activeTurnId !== expected.activeTurnId ||
+        runtime.threadStatus !== expected.threadStatus ||
+        runtime.threadMode !== expected.threadMode
+      ) return false;
+
+      const active = thread.status.type === 'active';
+      applyThreadUpdate(thread.id, (current) => ({
+        ...current,
+        threadCwd: thread.cwd ?? current.threadCwd,
+        threadTitle: thread.name ?? thread.preview ?? current.threadTitle,
+        threadStatus: thread.status,
+        loading: active,
+        activeTurnId: active ? current.activeTurnId : null,
+      }));
+      return true;
     },
 
     reconcileThreadSnapshot: (thread, expected) => {

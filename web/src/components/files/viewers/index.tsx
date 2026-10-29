@@ -2,6 +2,7 @@
  * File content viewer dispatcher — routes to the appropriate viewer by file type.
  * Office files can be delegated to OnlyOffice when configured.
  */
+import { lazy, Suspense } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { settingsListSettings } from '@/generated/api/sdk.gen';
@@ -9,16 +10,27 @@ import { getFileCategory } from '@/lib/file-category';
 import { ArchiveViewer } from './archive-viewer';
 import { AudioViewer } from './audio-viewer';
 import { BinaryViewer } from './binary-viewer';
-import { CodeViewer } from './code-viewer';
-import { DocxViewer } from './docx-viewer';
-import { FontViewer } from './font-viewer';
 import { ImageViewer } from './image-viewer';
 import { OnlyOfficeViewer } from './onlyoffice-viewer';
-import { PdfViewer } from './pdf-viewer';
 import { filePreviewSource, type PreviewSource } from './preview-source';
 import { ReadOnlyCodeViewer } from './read-only-code-viewer';
 import { VideoViewer } from './video-viewer';
-import { XlsxViewer } from './xlsx-viewer';
+
+const CodeViewer = lazy(() =>
+  import('./code-viewer').then((module) => ({ default: module.CodeViewer })),
+);
+const DocxViewer = lazy(() =>
+  import('./docx-viewer').then((module) => ({ default: module.DocxViewer })),
+);
+const FontViewer = lazy(() =>
+  import('./font-viewer').then((module) => ({ default: module.FontViewer })),
+);
+const PdfViewer = lazy(() =>
+  import('./pdf-viewer').then((module) => ({ default: module.PdfViewer })),
+);
+const XlsxViewer = lazy(() =>
+  import('./xlsx-viewer').then((module) => ({ default: module.XlsxViewer })),
+);
 
 interface Props {
   filePath: string;
@@ -27,6 +39,15 @@ interface Props {
 
 /** Dispatches to the appropriate viewer component based on file extension. */
 export function FileContentViewer({ filePath, source }: Props) {
+  const { t } = useTranslation();
+  return (
+    <Suspense fallback={<UnsupportedViewer message={t('Loading...')} />}>
+      <ContentViewer filePath={filePath} source={source} />
+    </Suspense>
+  );
+}
+
+function ContentViewer({ filePath, source }: Props) {
   const { t } = useTranslation();
   const previewSource = source ?? filePreviewSource(filePath);
   const category = getFileCategory(filePath);

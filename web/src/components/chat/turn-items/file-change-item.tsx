@@ -3,7 +3,7 @@
  * Default collapsed — header shows file path, approval status, and +/- stats.
  * When a pending approval exists, accept/acceptForSession/decline/cancel buttons appear.
  */
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import {
   FileCode,
   Loader2,
@@ -22,7 +22,10 @@ import { useTimelineStore } from '@/stores/timeline-store';
 import type { TurnItem } from '@/types/timeline';
 import type { ApprovalRequest, ResolvableApprovalDecision } from '@/types/approval';
 import { cn } from '@/lib/utils';
-import { GitDiffPanel } from './git-diff-panel';
+
+const GitDiffPanel = lazy(() =>
+  import('./git-diff-panel').then((module) => ({ default: module.GitDiffPanel })),
+);
 
 interface Props {
   item: TurnItem;
@@ -209,12 +212,14 @@ export function FileChangeItem({ item, approval }: Props) {
       {/* Collapsible diff body */}
       {expanded && diff && (
         item.completed ? (
-          <GitDiffPanel
-            diff={diff}
-            filePath={item.filePath ?? fileName}
-            showToolbar={false}
-            maxHeightClassName="max-h-64"
-          />
+          <Suspense fallback={<pre className="overflow-auto p-3 text-xs">{diff}</pre>}>
+            <GitDiffPanel
+              diff={diff}
+              filePath={item.filePath ?? fileName}
+              showToolbar={false}
+              maxHeightClassName="max-h-64"
+            />
+          </Suspense>
         ) : (
           <pre
             className={cn(

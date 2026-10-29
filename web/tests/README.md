@@ -7,6 +7,12 @@ node --test web/tests/user-input.test.mjs
 Theme preference, system changes, and legacy storage migration:
 `node --test web/tests/theme-store.test.mjs`.
 
+Loading traffic, background status recovery, and PWA asset cache regressions:
+`node --test web/tests/thread-sync.test.mjs web/tests/pwa-cache.test.mjs`.
+These verify that unopened threads use summaries, opening a thread restores full
+history, and cached build assets do not trigger background downloads.
+Backend response compression: `pnpm test --runInBand public-assets`.
+
 `http://127.0.0.1:5179/tests/fixtures/ui-controls.html` renders the actual header
 and FilesPanel for theme-menu and path-completion checks. Test all three themes
 on desktop and via the mobile overflow menu. In Open path, `/workspace/src`

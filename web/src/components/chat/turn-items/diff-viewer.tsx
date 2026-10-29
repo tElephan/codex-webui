@@ -3,12 +3,15 @@
  * Shows the aggregated diff across all file changes in a turn,
  * split into per-file GitHub-style diff panels.
  */
-import { useMemo, useState } from 'react';
+import { lazy, Suspense, useMemo, useState } from 'react';
 import { ChevronDown, GitBranch } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { stripGitPathPrefix } from '@/lib/diff-utils';
-import { GitDiffPanel } from './git-diff-panel';
+
+const GitDiffPanel = lazy(() =>
+  import('./git-diff-panel').then((module) => ({ default: module.GitDiffPanel })),
+);
 
 interface Props {
   diff: string;
@@ -128,25 +131,27 @@ export function DiffViewer({ diff }: Props) {
       </button>
 
       {expanded && (
-        <div className="space-y-2 border-t border-border p-2">
-          {sections.length > 0 ? (
-            sections.map((section) => (
+        <Suspense fallback={<pre className="overflow-auto p-3 text-xs">{diff}</pre>}>
+          <div className="space-y-2 border-t border-border p-2">
+            {sections.length > 0 ? (
+              sections.map((section) => (
+                <GitDiffPanel
+                  key={section.id}
+                  diff={section.diff}
+                  filePath={section.filePath}
+                  className="overflow-hidden rounded-md border border-border/70 bg-background/40"
+                  maxHeightClassName="max-h-96"
+                />
+              ))
+            ) : (
               <GitDiffPanel
-                key={section.id}
-                diff={section.diff}
-                filePath={section.filePath}
+                diff={diff}
                 className="overflow-hidden rounded-md border border-border/70 bg-background/40"
                 maxHeightClassName="max-h-96"
               />
-            ))
-          ) : (
-            <GitDiffPanel
-              diff={diff}
-              className="overflow-hidden rounded-md border border-border/70 bg-background/40"
-              maxHeightClassName="max-h-96"
-            />
-          )}
-        </div>
+            )}
+          </div>
+        </Suspense>
       )}
     </div>
   );

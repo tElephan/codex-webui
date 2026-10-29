@@ -2,13 +2,12 @@
  * Thread route component — resumes/reads a thread by URL param.
  * Selecting a thread no longer clears other live thread state.
  */
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, useNavigate } from '@tanstack/react-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { ChatTimeline } from '@/components/chat/chat-timeline';
 import { ChatInput, type ChatInputHandle } from '@/components/chat/chat-input';
-import { SessionPanel } from '@/components/chat/session-panel';
 import {
   ResizableHandle,
   ResizablePanel,
@@ -37,6 +36,12 @@ import {
 import { getApiErrorCode, getApiErrorMessage } from '@/lib/api-error';
 import type { ThreadResumeResponseDto } from '@/generated/api';
 import { ThreadTakeoverDialog } from '@/components/chat/thread-takeover-dialog';
+
+const SessionPanel = lazy(() =>
+  import('@/components/chat/session-panel').then((module) => ({
+    default: module.SessionPanel,
+  })),
+);
 
 /** Extracts a display label from a thread DTO. */
 function threadLabel(thread: {
@@ -250,18 +255,20 @@ export function ThreadView() {
   const showPanel = sessionPanelOpen && !!threadCwd;
 
   const sessionPanelContent = showPanel ? (
-    <SessionPanel
-      threadId={threadId}
-      cwd={threadCwd!}
-      onClose={handleCloseSessionPanel}
-      onOpenFileWindow={(filePath) => {
-        selectFileForWindow(filePath);
-        void navigate({ to: '/files' });
-      }}
-      openFile={pendingOpenFile?.path ?? null}
-      openFileSeq={pendingOpenFile?.seq ?? -1}
-      onFileOpened={handleFileOpened}
-    />
+    <Suspense fallback={null}>
+      <SessionPanel
+        threadId={threadId}
+        cwd={threadCwd!}
+        onClose={handleCloseSessionPanel}
+        onOpenFileWindow={(filePath) => {
+          selectFileForWindow(filePath);
+          void navigate({ to: '/files' });
+        }}
+        openFile={pendingOpenFile?.path ?? null}
+        openFileSeq={pendingOpenFile?.seq ?? -1}
+        onFileOpened={handleFileOpened}
+      />
+    </Suspense>
   ) : null;
 
   return (

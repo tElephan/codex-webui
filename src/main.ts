@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/all-exceptions.filter';
 import { registerPublicAssets } from './public-assets';
+import { registerHttpCompression } from './http-compression';
 import { FILES_SETTING_KEYS } from './settings/settings.definitions';
 import { SettingsService } from './settings/settings.service';
 
@@ -29,6 +30,7 @@ async function bootstrap() {
   );
 
   const settingsService = app.get(SettingsService);
+  await registerHttpCompression(app.getHttpAdapter().getInstance());
   const uploadMaxBytes = settingsService.getNumberSetting(
     FILES_SETTING_KEYS.uploadMaxBytes,
   );

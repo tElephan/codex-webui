@@ -69,6 +69,7 @@ export function syncThread(threadId: string, force = false): Promise<void> {
     return Promise.resolve();
   const before = useTimelineStore.getState().getThreadRuntime(threadId);
   if (!before || before.threadMode !== 'live') return Promise.resolve();
+  const includeHistory = before.hydrated;
 
   state.setStatus(threadId, 'syncing');
   const task = (async () => {
@@ -77,7 +78,7 @@ export function syncThread(threadId: string, force = false): Promise<void> {
       const [history, requests] = await Promise.allSettled([
         threadsReadThread({
           path: { threadId },
-          query: { includeTurns: true },
+          query: { includeTurns: includeHistory },
           signal,
           throwOnError: true,
         }),
@@ -97,7 +98,10 @@ export function syncThread(threadId: string, force = false): Promise<void> {
         throw history.reason;
       }
       const store = useTimelineStore.getState();
-      const applied = store.reconcileThreadSnapshot(
+      const reconcile = includeHistory
+        ? store.reconcileThreadSnapshot
+        : store.reconcileThreadSummary;
+      const applied = reconcile(
         history.value.data.thread,
         before,
       );
@@ -105,6 +109,10 @@ export function syncThread(threadId: string, force = false): Promise<void> {
       reconcilePendingRequests(threadId, before, requests.value.data.requests);
       state.setStatus(threadId, applied ? 'idle' : 'pending');
       if (!applied) return; // A live event won the race; retry once activity settles.
+      if (!includeHistory) {
+        void dispatchNextQueuedTurn(threadId);
+        return;
+      }
 
       const snapshot = store.getThreadRuntime(threadId)!;
       const [tokens, diffs, errors] = await Promise.allSettled([

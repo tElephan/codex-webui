@@ -3,7 +3,7 @@ import { withBasePath } from './base-path';
 function getBuildAssetUrls(): string[] {
   return Array.from(
     document.querySelectorAll<HTMLScriptElement | HTMLLinkElement>(
-      'script[src], link[rel="stylesheet"][href]',
+      'script[src], link[rel="stylesheet"][href], link[rel="modulepreload"][href]',
     ),
     (element) =>
       element instanceof HTMLScriptElement ? element.src : element.href,

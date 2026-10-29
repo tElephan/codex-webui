@@ -88,6 +88,7 @@ before(async () => {
       requests.push({
         method: request.method,
         path: new URL(request.url).pathname,
+        includeTurns: new URL(request.url).searchParams.get('includeTurns'),
       });
       return respond(request);
     },
@@ -129,6 +130,65 @@ test('recovers missing output and completion atomically without submitting a tur
   assert.equal(syncState.getState().threads['thread-a'].status, 'idle');
   assert.ok(observed.every(([loading, active]) => loading === Boolean(active)));
   assert.ok(requests.every((request) => request.method === 'GET'));
+});
+
+test('unopened background threads recover status and approvals without downloading history', async () => {
+  timeline.getState().ensureThreadState({ threadId: 'thread-a' });
+  const fallback = respond;
+  respond = (request) => {
+    const url = new URL(request.url);
+    if (url.pathname === '/api/threads/thread-a') {
+      assert.equal(url.searchParams.get('includeTurns'), 'false');
+      return Response.json({ thread: { ...thread([]), status: { type: 'active', activeFlags: [] } } });
+    }
+    if (url.pathname === '/api/pending-approvals')
+      return Response.json({ requests: [approval] });
+    return fallback(request);
+  };
+  await sync.syncThread('thread-a');
+  assert.equal(runtime().loading, true);
+  assert.equal(runtime().threadTitle, 'Recovered');
+  assert.equal(runtime().hydrated, false);
+  assert.equal(runtime().approvals.command.status, 'pending');
+  assert.equal(requests.length, 2);
+  assert.ok(requests.every((request) => request.method === 'GET'));
+
+  // Reconnect still reads a summary, even after live events added partial content.
+  timeline.getState().setActiveTurnIdForThread('thread-a', 'turn-a');
+  timeline.getState().updateCurrentTurnForThread('thread-a', 'turn-a', () => ({
+    kind: 'turn', turnId: 'turn-a', items: [], completed: false,
+  }));
+  respond = (request) => new URL(request.url).pathname === '/api/threads/thread-a'
+    ? Response.json({ thread: thread([]) }) : fallback(request);
+  await sync.syncThread('thread-a', true);
+  assert.equal(runtime().loading, false);
+  assert.equal(runtime().activeTurnId, null);
+  assert.equal(runtime().hydrated, false);
+  assert.equal(requests.filter((r) => r.path === '/api/threads/thread-a').length, 2);
+  assert.ok(requests.filter((r) => r.path === '/api/threads/thread-a').every((r) => r.includeTurns === 'false'));
+
+  // Opening the thread restores full recovery and dependent data reads.
+  timeline.getState().selectThread('thread-a');
+  respond = fallback;
+  await sync.syncThread('thread-a', true);
+  assert.equal(requests.findLast((r) => r.path === '/api/threads/thread-a').includeTurns, 'true');
+  assert.equal(runtime().timeline.find((entry) => entry.kind === 'turn').items[0].content, 'Full response');
+});
+
+test('a slow background summary cannot overwrite a newer socket status', async () => {
+  timeline.getState().ensureThreadState({ threadId: 'thread-a' });
+  const read = deferred();
+  const fallback = respond;
+  respond = (request) => new URL(request.url).pathname === '/api/threads/thread-a'
+    ? read.promise : fallback(request);
+  const task = sync.syncThread('thread-a');
+  timeline.getState().setLoadingForThread('thread-a', true);
+  timeline.getState().setActiveTurnIdForThread('thread-a', 'new-turn');
+  read.resolve(Response.json({ thread: thread([]) }));
+  await task;
+  assert.equal(runtime().loading, true);
+  assert.equal(runtime().activeTurnId, 'new-turn');
+  assert.equal(syncState.getState().threads['thread-a'].status, 'pending');
 });
 
 test('a slow snapshot cannot overwrite newer deltas; a subsequent sync fills missed history', async () => {

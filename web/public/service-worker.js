@@ -81,6 +81,11 @@ async function handleNavigation(request) {
 
 async function handleAsset(request, event) {
   const cached = await caches.match(request);
+  // Vite fingerprints these URLs. A changed build gets a different URL, so a
+  // cached chunk never needs a background download, even on a normal reload.
+  if (cached && getAppPath(new URL(request.url))?.startsWith('assets/')) {
+    return cached;
+  }
   const networkResponse = fetch(request).then((response) =>
     cacheResponse(ASSET_CACHE, request, response),
   );
@@ -117,5 +122,14 @@ self.addEventListener('message', (event) => {
     return !isPrivateAppRequest(new URL(value, SCOPE_URL));
   });
 
-  event.waitUntil(caches.open(ASSET_CACHE).then((cache) => cache.addAll(urls)));
+  event.waitUntil(
+    caches.open(ASSET_CACHE).then((cache) =>
+      Promise.all(urls.map(async (url) => {
+        if (await cache.match(url)) return;
+        // Reuse the browser HTTP cache on the first, uncontrolled page load.
+        const response = await fetch(url, { cache: 'force-cache' });
+        await cacheResponse(ASSET_CACHE, url, response);
+      })),
+    ),
+  );
 });

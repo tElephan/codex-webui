@@ -36,17 +36,16 @@ import {
   ResizablePanelGroup,
 } from '@/components/ui/resizable';
 import { clearApiToken } from '@/auth-token';
-import { getSocket, resetSocket } from '@/socket';
+import { resetSocket } from '@/socket';
 import { filesGetRoots, filesAddRoot } from '@/generated/api';
 import {
   pendingApprovalsListPending,
   settingsListSettings,
   threadsListLoadedThreads,
-  threadsResumeThread,
 } from '@/generated/api/sdk.gen';
 import { settingsListSettingsQueryKey } from '@/generated/api/@tanstack/react-query.gen';
 import { approvalFromPending } from '@/lib/pending-requests';
-import { syncThread } from '@/lib/thread-sync';
+import { syncThreads } from '@/lib/thread-sync';
 import { userInputFromPending } from '@/lib/user-input-parsers';
 
 const FilesPanel = lazy(() =>
@@ -130,8 +129,6 @@ export function AuthenticatedLayout() {
   const addUserInputRequestForThread = useTimelineStore(
     (s) => s.addUserInputRequestForThread,
   );
-  const ensureThreadState = useTimelineStore((s) => s.ensureThreadState);
-  const setLoadingForThread = useTimelineStore((s) => s.setLoadingForThread);
   const setActiveThread = useTimelineStore((s) => s.setActiveThread);
   const setMaxIdleSubscriptions = useTimelineStore(
     (s) => s.setMaxIdleSubscriptions,
@@ -179,7 +176,6 @@ export function AuthenticatedLayout() {
   // Discover loaded threads and hydrate pending approvals on mount.
   useEffect(() => {
     let cancelled = false;
-    const socket = getSocket();
 
     // 1. Discover loaded threads from app-server memory and subscribe them.
     const discoverLoadedThreads = async () => {
@@ -193,31 +189,20 @@ export function AuthenticatedLayout() {
         });
         if (cancelled || !data) return;
 
+        const discovered: string[] = [];
         for (const tid of data.data) {
           if (seen.has(tid)) continue;
           seen.add(tid);
 
           if (useTimelineStore.getState().subscribedThreadIds.has(tid)) continue;
-          ensureThreadState({ threadId: tid });
-          setLoadingForThread(tid, true);
-          socket.emit('thread.subscribe', { threadId: tid });
-          useTimelineStore.setState((s) => ({
-            subscribedThreadIds: new Set(s.subscribedThreadIds).add(tid),
-          }));
-
-          // A socket notification can arrive before the resume response.
-          const before = useTimelineStore.getState().getThreadRuntime(tid)!;
-          void threadsResumeThread({ path: { threadId: tid } })
-            .then(({ data: resumeData }) => {
-              if (cancelled || !resumeData) return;
-              if (!useTimelineStore.getState().reconcileThreadSnapshot(
-                { ...resumeData.thread, cwd: resumeData.cwd }, before,
-              )) void syncThread(tid, true);
-            })
-            .catch(() => {
-              if (!cancelled) setLoadingForThread(tid, false);
-            });
+          useTimelineStore.getState().subscribeThread(tid);
+          // Background threads need status and pending requests, not their history.
+          // The selected thread is loaded separately by ThreadView.
+          if (useTimelineStore.getState().threadId !== tid) discovered.push(tid);
         }
+
+        await syncThreads(discovered);
+        if (cancelled) return;
 
         if (!data.nextCursor) break;
         cursor = data.nextCursor;
@@ -242,12 +227,7 @@ export function AuthenticatedLayout() {
     return () => {
       cancelled = true;
     };
-  }, [
-    addApprovalForThread,
-    addUserInputRequestForThread,
-    ensureThreadState,
-    setLoadingForThread,
-  ]);
+  }, [addApprovalForThread, addUserInputRequestForThread]);
 
   // Handle snackbar jump-to-thread actions.
   useEffect(() => {
