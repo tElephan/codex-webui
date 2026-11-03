@@ -111,6 +111,14 @@ the outer page; the iframe body should instead have `data-isolated="true"`.
 Response recovery regressions: `node --test web/tests/thread-sync.test.mjs`.
 They cover missed output/completion, stale reads racing live messages, changing
 conversations, optimistic messages, pending requests, retry, and queued follow-ups.
+They also verify that concurrent opens share one resume, connected cached threads
+need no history reads, and reconnects or unsubscriptions invalidate reuse.
+
+Run `web/tests/thread-switch.browser.js` through `agent-browser eval --stdin` on
+`http://127.0.0.1:5179/tests/fixtures/thread-switch.html`, on desktop and mobile.
+It checks the real sidebar and route under StrictMode, delayed responses during
+navigation, one initial resume per thread, and zero history requests on cached
+switches, alongside the chat layout checks.
 
 `http://127.0.0.1:5179/tests/fixtures/response-status.html` mounts the actual socket
 hook, timeline and persistent activity banner with a local transport. Use

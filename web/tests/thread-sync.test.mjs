@@ -17,7 +17,7 @@ Object.assign(globalThis, {
   document: { querySelector: () => null },
   window: { localStorage: storage, location: { origin: 'http://localhost' } },
 });
-let vite, timeline, sync, syncState, queue, client;
+let vite, timeline, sync, syncState, queue, client, connection, socket;
 let requests, respond;
 const turn = (id = 'turn-a', status = 'completed', text = 'Full response') => ({
   id,
@@ -78,10 +78,15 @@ before(async () => {
   sync = await vite.ssrLoadModule('/src/lib/thread-sync.ts');
   syncState = (await vite.ssrLoadModule('/src/stores/thread-sync-store.ts'))
     .useThreadSyncStore;
+  connection = (await vite.ssrLoadModule('/src/stores/connection-store.ts'))
+    .useConnectionStore;
   queue = (await vite.ssrLoadModule('/src/stores/queued-turn-store.ts'))
     .useQueuedTurnStore;
   client = (await vite.ssrLoadModule('/src/generated/api/client.gen.ts'))
     .client;
+  socket = (await vite.ssrLoadModule('/src/socket.ts')).getSocket();
+  socket.disconnect();
+  socket.emit = () => socket;
   client.setConfig({
     baseUrl: 'http://localhost',
     fetch: async (request) => {
@@ -95,22 +100,189 @@ before(async () => {
   });
 });
 after(async () => {
+  socket?.disconnect();
   await vite?.close();
 });
 beforeEach(() => {
   timeline.setState(timeline.getInitialState(), true);
   syncState.setState({ threads: {} });
+  connection.setState({ connected: true, epoch: 1 });
   queue.setState({ queues: {} });
   requests = [];
   respond = (request) => {
     const path = new URL(request.url).pathname;
     if (path === '/api/threads/thread-a')
       return Response.json({ thread: thread() });
+    if (path === '/api/threads/thread-a/resume')
+      return Response.json({ thread: thread(), cwd: '/work' });
     if (path === '/api/pending-approvals')
       return Response.json({ requests: [] });
     if (path.endsWith('/turn-errors')) return Response.json({ errors: [] });
     return Response.json({ turns: [] });
   };
+});
+
+test('selecting an unopened thread does not mark its history as hydrated', () => {
+  timeline.getState().setActiveThread('thread-a');
+  assert.equal(runtime().hydrated, false);
+  timeline.getState().selectThread('thread-b');
+  assert.equal(runtime().hydrated, false);
+  timeline.getState().selectThread('thread-a');
+  assert.equal(runtime().hydrated, false);
+  timeline.getState().hydrateTimelineForThread('thread-a', []);
+  timeline.getState().selectThread('thread-b');
+  timeline.getState().selectThread('thread-a');
+  assert.equal(runtime().hydrated, true); // An empty, fetched history is still cached.
+});
+
+test('concurrent opens and reconnect recovery share one resume and one set of detail reads', async () => {
+  const read = deferred();
+  const fallback = respond;
+  respond = (request) => new URL(request.url).pathname.endsWith('/resume')
+    ? read.promise : fallback(request);
+  const first = sync.openThread('thread-a');
+  assert.equal(first, sync.openThread('thread-a'));
+  const recover = sync.syncThread('thread-a', true);
+  read.resolve(Response.json({ thread: thread(), cwd: '/work' }));
+  await Promise.all([first, recover]);
+  assert.equal(runtime().hydrated, true);
+  assert.equal(runtime().loading, false);
+  assert.equal(syncState.getState().threads['thread-a'].status, 'idle');
+  assert.equal(requests.filter((r) => r.path.endsWith('/resume')).length, 1);
+  assert.equal(requests.filter((r) => r.path === '/api/threads/thread-a').length, 0);
+  for (const detail of ['token-usage', 'turn-diffs', 'turn-errors'])
+    assert.equal(requests.filter((r) => r.path.endsWith(`/${detail}`)).length, 1);
+});
+
+test('switching back to a continuously subscribed thread preserves live content with no requests', async () => {
+  await sync.openThread('thread-a');
+  timeline.getState().updateTurnItemForThread('thread-a', 'turn-a', 'answer-turn-a', (item) => ({
+    ...item, content: 'Newest socket content', completed: false,
+  }));
+  timeline.getState().setActiveTurnIdForThread('thread-a', 'turn-a');
+  timeline.getState().setLoadingForThread('thread-a', true);
+  const previous = runtime().timeline;
+  timeline.getState().setActiveThread('thread-b');
+  const requestCount = requests.length;
+  await sync.openThread('thread-a');
+  assert.equal(requests.length, requestCount);
+  assert.equal(timeline.getState().threadId, 'thread-a');
+  assert.equal(runtime().timeline, previous);
+  assert.equal(runtime().activeTurnId, 'turn-a');
+  assert.equal(runtime().timeline.find((e) => e.kind === 'turn').items[0].content, 'Newest socket content');
+});
+
+test('a connection gap or unsubscribed thread invalidates reuse', async () => {
+  await sync.openThread('thread-a');
+  timeline.getState().selectThread('thread-b');
+  connection.getState().setConnected(false);
+  connection.getState().setConnected(true);
+  await sync.openThread('thread-a');
+  assert.equal(requests.filter((r) => r.path.endsWith('/resume')).length, 2);
+  timeline.getState().unsubscribeThread('thread-a');
+  await sync.openThread('thread-a');
+  assert.equal(requests.filter((r) => r.path.endsWith('/resume')).length, 3);
+});
+
+test('opening a thread during a history recovery uses its completed snapshot without another resume', async () => {
+  await sync.openThread('thread-a');
+  connection.getState().setConnected(false);
+  connection.getState().setConnected(true);
+  const read = deferred();
+  const fallback = respond;
+  respond = (request) => new URL(request.url).pathname === '/api/threads/thread-a'
+    ? read.promise : fallback(request);
+  const recovery = sync.syncThread('thread-a', true);
+  const open = sync.openThread('thread-a');
+  read.resolve(Response.json({ thread: thread() }));
+  await Promise.all([recovery, open]);
+  assert.equal(requests.filter((r) => r.path.endsWith('/resume')).length, 1);
+});
+
+test('a resume crossing a connection gap cannot validate the new connection cache', async () => {
+  const read = deferred();
+  const fallback = respond;
+  respond = (request) => new URL(request.url).pathname.endsWith('/resume')
+    ? read.promise : fallback(request);
+  const first = sync.openThread('thread-a');
+  connection.getState().setConnected(false);
+  connection.getState().setConnected(true);
+  read.resolve(Response.json({ thread: thread(), cwd: '/work' }));
+  await first;
+  assert.notEqual(syncState.getState().threads['thread-a'].connectionEpoch, connection.getState().epoch);
+  respond = fallback;
+  await sync.openThread('thread-a');
+  assert.equal(requests.filter((r) => r.path.endsWith('/resume')).length, 2);
+});
+
+test('reconnect recovery waits for an ongoing open and then fills the connection gap', async () => {
+  const read = deferred();
+  const fallback = respond;
+  respond = (request) => new URL(request.url).pathname.endsWith('/resume')
+    ? read.promise : fallback(request);
+  const open = sync.openThread('thread-a');
+  connection.getState().setConnected(false);
+  connection.getState().setConnected(true);
+  const recovery = sync.syncThread('thread-a');
+  read.resolve(Response.json({ thread: thread(), cwd: '/work' }));
+  await Promise.all([open, recovery]);
+  assert.equal(requests.filter((r) => r.path.endsWith('/resume')).length, 1);
+  assert.equal(requests.filter((r) => r.path === '/api/threads/thread-a').length, 1);
+  assert.equal(syncState.getState().threads['thread-a'].connectionEpoch, connection.getState().epoch);
+});
+
+test('a recent successful check does not throttle recovery after reconnecting', async () => {
+  await sync.openThread('thread-a');
+  connection.getState().setConnected(false);
+  connection.getState().setConnected(true);
+  await sync.syncThread('thread-a');
+  assert.equal(requests.filter((r) => r.path === '/api/threads/thread-a').length, 1);
+  assert.equal(syncState.getState().threads['thread-a'].connectionEpoch, connection.getState().epoch);
+});
+
+test('a live event during the initial open triggers one immediate reconciliation without losing the delta', async () => {
+  const read = deferred();
+  const fallback = respond;
+  respond = (request) => new URL(request.url).pathname.endsWith('/resume')
+    ? read.promise : fallback(request);
+  const open = sync.openThread('thread-a');
+  timeline.getState().updateCurrentTurnForThread('thread-a', 'turn-a', () => ({
+    kind: 'turn', turnId: 'turn-a', items: [], completed: false,
+  }));
+  read.resolve(Response.json({ thread: thread(), cwd: '/work' }));
+  await open;
+  assert.equal(requests.filter((r) => r.path.endsWith('/resume')).length, 1);
+  assert.equal(requests.filter((r) => r.path === '/api/threads/thread-a').length, 1);
+  assert.equal(runtime().hydrated, true);
+  assert.equal(runtime().timeline.find((e) => e.kind === 'turn').items[0].content, 'Full response');
+  assert.equal(syncState.getState().threads['thread-a'].status, 'idle');
+});
+
+test('failed pending-request recovery keeps a successfully opened thread live and available for retry', async () => {
+  const fallback = respond;
+  respond = (request) => new URL(request.url).pathname === '/api/pending-approvals'
+    ? Response.json({ message: 'Unavailable' }, { status: 503 }) : fallback(request);
+  await sync.openThread('thread-a');
+  assert.equal(runtime().hydrated, true);
+  assert.equal(runtime().threadMode, 'live');
+  assert.equal(syncState.getState().threads['thread-a'].status, 'error');
+  respond = fallback;
+  await sync.syncThread('thread-a');
+  assert.equal(syncState.getState().threads['thread-a'].status, 'idle');
+});
+
+test('a slow open cannot replace the selected thread after navigating away', async () => {
+  const read = deferred();
+  const fallback = respond;
+  respond = (request) => new URL(request.url).pathname.endsWith('/resume')
+    ? read.promise : fallback(request);
+  const task = sync.openThread('thread-a');
+  timeline.getState().setActiveThread('thread-b');
+  read.resolve(Response.json({ thread: thread(), cwd: '/work' }));
+  await task;
+  assert.equal(timeline.getState().threadId, 'thread-b');
+  assert.equal(runtime().hydrated, true);
+  assert.equal(timeline.getState().timeline.length, 0);
 });
 
 test('recovers missing output and completion atomically without submitting a turn', async () => {

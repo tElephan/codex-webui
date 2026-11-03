@@ -32,6 +32,8 @@
   };
   await wait(500);
   checkLayout('long-session');
+  check(test.requests.filter((key) => key === 'POST /api/threads/long-session/resume').length === 1,
+    'StrictMode mounts share one initial resume');
   const readLong = 'GET /api/threads/long-session';
   const resumeShort = 'POST /api/threads/short-session/resume';
   test.hold(readLong);
@@ -51,6 +53,23 @@
   test.release(resumeShort);
   await wait(400);
   checkLayout('short-session');
+  check(test.requests.filter((key) => key === resumeShort).length === 1,
+    'sidebar navigation and route mount share one resume');
+
+  const historyRequests = () => test.requests.filter((key) =>
+    /^(GET \/api\/threads\/[^/]+|POST \/api\/threads\/[^/]+\/resume)$/.test(key));
+  const beforeCachedSwitches = historyRequests().length;
+  clickThread('long-session');
+  await wait();
+  checkLayout('long-session');
+  clickThread('short-session');
+  await wait();
+  checkLayout('short-session');
+  const cachedSwitchHistoryRequests = historyRequests().length - beforeCachedSwitches;
+  check(cachedSwitchHistoryRequests === 0,
+    'switching between subscribed cached conversations performs no history requests');
+  check(test.syncState.getState().threads['short-session'].status === 'idle',
+    'cached navigation does not show a synchronization state');
 
   // Reproduce the reported ordering with already cached messages as well.
   for (const target of ['long-session', 'third-session', 'short-session', 'long-session']) {
@@ -77,5 +96,7 @@
   await test.navigate('third-session');
   await wait(300);
   checkLayout('third-session');
-  return { passed: true, viewport: [innerWidth, innerHeight], switches: 7 };
+  return { passed: true, viewport: [innerWidth, innerHeight], switches: 9,
+    cachedSwitchHistoryRequests,
+    resumes: test.requests.filter((key) => key.endsWith('/resume')).length };
 })();

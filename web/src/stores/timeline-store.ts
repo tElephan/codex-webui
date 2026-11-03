@@ -4,6 +4,7 @@
  */
 import { create } from 'zustand';
 import { getSocket } from '../socket';
+import { useThreadSyncStore } from './thread-sync-store';
 import { parseAsyncUserInputQuestions } from '../lib/user-input-parsers';
 import type { TimelineEntry, TurnItem, TurnPlanState } from '../types/timeline';
 import type {
@@ -269,7 +270,7 @@ function runtimeFromSelected(state: TimelineState): ThreadRuntimeState | null {
     threadStatus: state.threadStatus,
     activeTurnId: state.activeTurnId,
     pendingResolvedRequestIds: state.pendingResolvedRequestIds,
-    hydrated: true,
+    hydrated: state.hydrated,
     lastActivityAt: state.lastActivityAt,
   };
 }
@@ -291,6 +292,7 @@ function selectedFields(
       threadCwd: null,
       threadTitle: null,
       threadMode: 'live',
+      hydrated: false,
       timeline: [],
       loading: false,
       expandedReasoning: new Set<string>(),
@@ -309,6 +311,7 @@ function selectedFields(
     threadCwd: runtime.threadCwd,
     threadTitle: runtime.threadTitle,
     threadMode: runtime.threadMode,
+    hydrated: runtime.hydrated,
     timeline: runtime.timeline,
     loading: runtime.loading,
     expandedReasoning: runtime.expandedReasoning,
@@ -529,6 +532,7 @@ interface TimelineState {
   threadCwd: string | null;
   threadTitle: string | null;
   threadMode: ThreadMode;
+  hydrated: boolean;
   timeline: TimelineEntry[];
   loading: boolean;
   expandedReasoning: Set<string>;
@@ -744,6 +748,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     threadCwd: null,
     threadTitle: null,
     threadMode: 'live',
+    hydrated: false,
     timeline: [],
     loading: false,
     expandedReasoning: new Set<string>(),
@@ -814,6 +819,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
     unsubscribeThread: (threadId) => {
       getSocket().emit('thread.unsubscribe', { threadId });
+      useThreadSyncStore.getState().setStatus(threadId, 'pending');
       set((state) => {
         const subscribedThreadIds = new Set(state.subscribedThreadIds);
         subscribedThreadIds.delete(threadId);

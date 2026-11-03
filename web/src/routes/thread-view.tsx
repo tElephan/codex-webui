@@ -16,7 +16,7 @@ import {
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { useBreakpoint } from '@/hooks/use-breakpoint';
 import { useTimelineStore, type ThreadRuntimeState } from '@/stores/timeline-store';
-import { syncThread } from '@/lib/thread-sync';
+import { openThread, syncThread } from '@/lib/thread-sync';
 import { useThreadSyncStore } from '@/stores/thread-sync-store';
 import { useFilesStore } from '@/stores/files-store';
 import { dispatchNextQueuedTurn } from '@/stores/queued-turn-store';
@@ -24,7 +24,6 @@ import { showSnackbar } from '@/stores/snackbar-store';
 import {
   threadsForkThreadMutation,
   threadsListThreadsQueryKey,
-  threadsResumeThreadMutation,
   threadsReadThreadOptions,
 } from '@/generated/api/@tanstack/react-query.gen';
 import {
@@ -163,25 +162,6 @@ export function ThreadView() {
       .catch(() => undefined);
   };
 
-  const resumeThread = useMutation({
-    ...threadsResumeThreadMutation(),
-    onMutate: (vars) => useTimelineStore.getState().getThreadRuntime(vars.path.threadId),
-    onSuccess: (res, _vars, before) => handleResumeSuccess(res, before),
-    onError: (err, vars) => {
-      const failedId = vars.path.threadId;
-      useThreadSyncStore.getState().setStatus(failedId, 'error');
-      setLoadingForThread(failedId, false);
-      // Only attempt archived read if this thread is still selected.
-      if (useTimelineStore.getState().threadId === failedId) {
-        const mode =
-          getApiErrorCode(err) === 'threads.active_writer'
-            ? 'writerConflict'
-            : 'readOnly';
-        void tryReadArchived(failedId, mode);
-      }
-    },
-  });
-
   /** Fallback: try to read the thread as an archived snapshot. */
   const tryReadArchived = async (
     targetId: string,
@@ -241,12 +221,14 @@ export function ThreadView() {
     onError: (err) => addSystemError(getApiErrorMessage(err)),
   });
 
-  // Load or select thread when URL param changes. Backend ensures resume is deduped.
+  // Navigation has one loader, shared with reconnects and repeated route mounts.
   useEffect(() => {
-    setActiveThread(threadId);
-    setLoadingForThread(threadId, true);
-    useThreadSyncStore.getState().setStatus(threadId, 'syncing');
-    resumeThread.mutate({ path: { threadId } });
+    void openThread(threadId).catch((error: unknown) => {
+      if (useTimelineStore.getState().threadId !== threadId) return;
+      const mode = getApiErrorCode(error) === 'threads.active_writer'
+        ? 'writerConflict' : 'readOnly';
+      void tryReadArchived(threadId, mode);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadId]);
 

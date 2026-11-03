@@ -1,5 +1,6 @@
 /** Actual route/sidebar/timeline, with independently delayed history responses. */
 import { createRoot } from 'react-dom/client';
+import { StrictMode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   createMemoryHistory, createRootRoute, createRoute, createRouter, Outlet, RouterProvider,
@@ -104,7 +105,9 @@ Object.assign(window, {
   },
 });
 createRoot(document.getElementById('root')!).render(
-  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-    <RouterProvider router={router} />
-  </QueryClientProvider>,
+  <StrictMode>
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
+  </StrictMode>,
 );

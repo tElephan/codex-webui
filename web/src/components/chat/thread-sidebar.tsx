@@ -18,7 +18,6 @@ import {
   threadsListBranchTreesOptions,
   threadsListThreadsOptions,
   threadsListThreadsQueryKey,
-  threadsResumeThreadMutation,
   threadsSetThreadNameMutation,
   threadsStartThreadMutation,
   threadsUnarchiveThreadMutation,
@@ -77,13 +76,6 @@ export function ThreadSidebar() {
   const clearThread = useTimelineStore((s) => s.clearThread);
   const setThreadTitle = useTimelineStore((s) => s.setThreadTitle);
   const hydrateTimelineForThread = useTimelineStore((s) => s.hydrateTimelineForThread);
-  const hydrateTokenUsageForThread = useTimelineStore((s) => s.hydrateTokenUsageForThread);
-  const hydrateTurnDiffsForThread = useTimelineStore((s) => s.hydrateTurnDiffsForThread);
-  const hydrateTurnErrorsForThread = useTimelineStore((s) => s.hydrateTurnErrorsForThread);
-  const setThreadTitleForThread = useTimelineStore((s) => s.setThreadTitleForThread);
-  const setLoadingForThread = useTimelineStore((s) => s.setLoadingForThread);
-  const setThreadStatusForThread = useTimelineStore((s) => s.setThreadStatusForThread);
-  const setActiveTurnIdForThread = useTimelineStore((s) => s.setActiveTurnIdForThread);
   const addSystemError = useTimelineStore((s) => s.addSystemError);
   const queryClient = useQueryClient();
 
@@ -198,29 +190,6 @@ export function ThreadSidebar() {
   };
 
   // ── Thread open helpers ─────────────────────────────────────────────
-  const resumeThread = useMutation({
-    ...threadsResumeThreadMutation(),
-    onSuccess: (res) => {
-      const tid = res.thread.id;
-      setThreadTitleForThread(tid, threadLabel(res.thread));
-      hydrateTimelineForThread(tid, res.thread.turns, res.cwd);
-      setThreadStatusForThread(tid, res.thread.status);
-      const activeTurn = res.thread.turns.find((turn) => turn.status === 'inProgress');
-      setActiveTurnIdForThread(tid, activeTurn?.id ?? null);
-      setLoadingForThread(tid, Boolean(activeTurn));
-      void tokenUsageReadThreadTokenUsage({ path: { threadId: tid } })
-        .then(({ data }) => data && hydrateTokenUsageForThread(tid, data.turns))
-        .catch(() => undefined);
-      void turnDiffReadThreadTurnDiffs({ path: { threadId: tid } })
-        .then(({ data }) => data && hydrateTurnDiffsForThread(tid, data.turns))
-        .catch(() => undefined);
-      void turnErrorsReadThreadTurnErrors({ path: { threadId: tid } })
-        .then(({ data }) => data && hydrateTurnErrorsForThread(tid, data.errors))
-        .catch(() => undefined);
-    },
-    onError: (_err, vars) => setLoadingForThread(vars.path.threadId, false),
-  });
-
   /**
    * True when the thread is already open *and on screen*.
    *
@@ -239,9 +208,6 @@ export function ThreadSidebar() {
 
   const openLiveThread = (thread: ThreadDto) => {
     if (isThreadOnScreen(thread, 'live')) return;
-    setActiveThread(thread.id, thread.cwd, threadLabel(thread));
-    setLoadingForThread(thread.id, true);
-    resumeThread.mutate({ path: { threadId: thread.id } });
     void navigate({ to: '/t/$threadId', params: { threadId: thread.id } });
   };
 
@@ -331,13 +297,13 @@ export function ThreadSidebar() {
       setActiveThread(tid, res.cwd, threadLabel(res.thread));
       hydrateTimelineForThread(tid, res.thread.turns, res.cwd);
       void tokenUsageReadThreadTokenUsage({ path: { threadId: tid } })
-        .then(({ data }) => data && hydrateTokenUsageForThread(tid, data.turns))
+        .then(({ data }) => data && useTimelineStore.getState().hydrateTokenUsageForThread(tid, data.turns))
         .catch(() => undefined);
       void turnDiffReadThreadTurnDiffs({ path: { threadId: tid } })
-        .then(({ data }) => data && hydrateTurnDiffsForThread(tid, data.turns))
+        .then(({ data }) => data && useTimelineStore.getState().hydrateTurnDiffsForThread(tid, data.turns))
         .catch(() => undefined);
       void turnErrorsReadThreadTurnErrors({ path: { threadId: tid } })
-        .then(({ data }) => data && hydrateTurnErrorsForThread(tid, data.errors))
+        .then(({ data }) => data && useTimelineStore.getState().hydrateTurnErrorsForThread(tid, data.errors))
         .catch(() => undefined);
       invalidateThreads();
       void navigate({ to: '/t/$threadId', params: { threadId: tid } });
